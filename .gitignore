@@ -1,0 +1,7 @@
+# yerel calisma durumu / uretim artiklari
+proje/
+node_modules/
+kurulum.json
+kurulum.log
+*.log
+exe/fail.png
