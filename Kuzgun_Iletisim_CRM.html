@@ -400,51 +400,81 @@
                             </div>
                         </div>
 
+                        <!-- Local Snapshots (undo) -->
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-wrap gap-2">
+                                <h4 class="font-bold text-gray-800 flex items-center gap-2 text-sm">
+                                    <i class="fa-solid fa-clock-rotate-left text-amber-600"></i>
+                                    Anlık Görüntüler (Geri Al) <span class="text-xs font-normal text-gray-500">- bu cihazda, son {{ MAX_SNAPSHOTS }}</span>
+                                </h4>
+                                <button @click="takeSnapshot('Elle alınan görüntü', true)" class="text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 font-semibold"><i class="fa-solid fa-camera mr-1"></i>Şimdi Görüntü Al</button>
+                            </div>
+                            <div v-if="snapshots.length === 0" class="p-6 text-center text-xs text-gray-500">Henüz görüntü yok. Geri yükleme/içe aktarma öncesinde otomatik alınır; yanlışlıkla yapılan işlemi buradan geri alabilirsiniz.</div>
+                            <ul v-else class="divide-y divide-gray-100 text-sm">
+                                <li v-for="sn in snapshots" :key="sn.id" class="px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
+                                    <div>
+                                        <div class="font-medium text-gray-800">{{ sn.reason }}</div>
+                                        <div class="text-xs text-gray-500">{{ formatDate(sn.ts) }} · {{ sn.count }} kayıt</div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button @click="openRestoreFromSnapshot(sn)" class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-semibold"><i class="fa-solid fa-rotate-left mr-1"></i>Geri Al</button>
+                                        <button @click="removeSnapshot(sn.id)" class="px-2.5 py-1.5 text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg text-xs" title="Sil"><i class="fa-solid fa-trash"></i></button>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+
                         <!-- Drive Backups List Table -->
                         <div v-if="isCloud && authed" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-wrap gap-3">
                                 <h4 class="font-bold text-gray-800 flex items-center gap-2 text-sm">
                                     <i class="fa-brands fa-google-drive text-emerald-600"></i>
-                                    Google Drive Bulut Yedekleri (Son 30 Gün)
+                                    Google Drive Bulut Yedekleri (son 40)
                                 </h4>
-                                <span class="text-xs text-gray-500 font-medium">{{ cloudBackups.length }} kayıt bulundu</span>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <input v-model="backupSearch" type="text" placeholder="Yedek ara (tarih, ad)..." class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-44 focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <select v-model="backupFilter" class="px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white">
+                                        <option value="ALL">Tümü</option>
+                                        <option value="normal">Günlük / Anlık</option>
+                                        <option value="safety">Güvenlik (öncesi)</option>
+                                    </select>
+                                    <span class="text-xs text-gray-500 font-medium">{{ filteredBackups.length }} / {{ cloudBackups.length }}</span>
+                                </div>
                             </div>
+                            <div v-if="backupError" class="px-6 py-3 bg-red-50 text-red-700 text-xs border-b border-red-100"><i class="fa-solid fa-triangle-exclamation mr-1"></i>{{ backupError }}</div>
                             <div class="overflow-x-auto">
-                                <table class="w-full text-left min-w-[640px]">
+                                <table class="w-full text-left min-w-[760px]">
                                     <thead class="bg-gray-50/50 border-b text-xs text-gray-600 uppercase">
                                         <tr>
                                             <th class="p-4">Yedek Dosyası</th>
-                                            <th class="p-4">Yedekleme Tarihi</th>
-                                            <th class="p-4">Kayıt Sayısı</th>
+                                            <th class="p-4">Tarih</th>
+                                            <th class="p-4">Kayıt</th>
                                             <th class="p-4">Boyut</th>
-                                            <th class="p-4 text-right">Geri Yükle</th>
+                                            <th class="p-4 text-right">İşlemler</th>
                                         </tr>
                                     </thead>
                                     <tbody class="text-sm divide-y divide-gray-100">
-                                        <tr v-for="b in cloudBackups" :key="b.id" class="hover:bg-gray-50 transition">
-                                            <td class="p-4 font-mono font-medium text-gray-800">
+                                        <tr v-for="b in filteredBackups" :key="b.id" class="hover:bg-gray-50 transition">
+                                            <td class="p-4 font-mono font-medium text-gray-800 text-xs">
                                                 <i class="fa-regular fa-file-code text-blue-500 mr-2"></i>{{ b.name }}
+                                                <span v-if="b.kind === 'safety'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-amber-100 text-amber-800 font-sans font-semibold">güvenlik</span>
                                             </td>
-                                            <td class="p-4 text-gray-600">{{ b.updatedStr || formatDate(b.updated) }}</td>
+                                            <td class="p-4 text-gray-600 text-xs">{{ b.updatedStr || formatDate(b.updated) }}</td>
                                             <td class="p-4">
-                                                <span class="px-2.5 py-1 text-xs rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-100">
-                                                    {{ b.count !== null ? b.count + ' Cihaz' : '-' }}
-                                                </span>
+                                                <span class="px-2.5 py-1 text-xs rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-100">{{ b.count !== null && b.count !== undefined ? b.count + ' Cihaz' : '-' }}</span>
                                             </td>
                                             <td class="p-4 text-xs text-gray-500">{{ formatBytes(b.size) }}</td>
-                                            <td class="p-4 text-right space-x-2">
-                                                <button @click="openRestoreModal(b, 'merge')" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold transition" title="Mevcut kayıtları koruyarak eşleştirip geri yükler">
-                                                    <i class="fa-solid fa-code-merge mr-1"></i>Akıllı Eşle
-                                                </button>
-                                                <button @click="openRestoreModal(b, 'replace')" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-semibold transition" title="Mevcut verileri temizleyip birebir yedeği yükler">
-                                                    <i class="fa-solid fa-arrows-rotate mr-1"></i>Sıfırdan Değiştir
-                                                </button>
+                                            <td class="p-4 text-right whitespace-nowrap space-x-1.5">
+                                                <button @click="downloadDriveBackup(b)" class="px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-lg text-xs" title="Bilgisayara indir"><i class="fa-solid fa-download"></i></button>
+                                                <button @click="openRestoreModal(b, 'merge')" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold transition" title="Mevcut kayıtları koruyarak eşleştirip geri yükler"><i class="fa-solid fa-code-merge mr-1"></i>Akıllı Eşle</button>
+                                                <button @click="openRestoreModal(b, 'replace')" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-semibold transition" title="Mevcut verileri temizleyip birebir yedeği yükler"><i class="fa-solid fa-arrows-rotate mr-1"></i>Sıfırdan Değiştir</button>
+                                                <button @click="deleteDriveBackup(b)" class="px-2.5 py-1.5 text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg text-xs" title="Yedeği sil"><i class="fa-solid fa-trash"></i></button>
                                             </td>
                                         </tr>
-                                        <tr v-if="cloudBackups.length === 0">
+                                        <tr v-if="filteredBackups.length === 0">
                                             <td colspan="5" class="p-12 text-center text-gray-500">
                                                 <i class="fa-solid fa-cloud-arrow-up text-3xl mb-2 text-gray-300 block"></i>
-                                                {{ loadingBackups ? 'Google Drive yedekleri taranıyor...' : 'Drive klasöründe henüz bulut yedeği bulunmuyor. Yukarıdaki "Şimdi Drive\'a Yedekle" butonu ile ilk yedeği alabilirsiniz.' }}
+                                                {{ loadingBackups ? 'Google Drive yedekleri taranıyor...' : (cloudBackups.length ? 'Aramanızla eşleşen yedek yok.' : 'Drive klasöründe henüz bulut yedeği bulunmuyor. Yukarıdaki "Şimdi Drive\'a Yedekle" butonu ile ilk yedeği alabilirsiniz.') }}
                                             </td>
                                         </tr>
                                     </tbody>
@@ -577,34 +607,58 @@
         </div>
 
         <!-- Restore Confirmation Modal -->
-        <div v-if="restoreModalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-[75]" @click.self="restoreModalOpen = false">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div v-if="restoreModalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-[75]" @click.self="!restoring && (restoreModalOpen = false)">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[92vh] overflow-y-auto">
                 <div class="p-5 border-b flex items-center justify-between" :class="restoreMode === 'replace' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'">
                     <h3 class="font-bold text-base flex items-center gap-2">
                         <i :class="restoreMode === 'replace' ? 'fa-solid fa-triangle-exclamation text-red-600' : 'fa-solid fa-code-merge text-blue-600'"></i>
-                        {{ restoreMode === 'replace' ? 'Sıfırdan Değiştirerek Geri Yükle' : 'Akıllı Eşleştirme ile Geri Yükle' }}
+                        Geri Yükleme Onayı
                     </h3>
-                    <button @click="restoreModalOpen = false" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+                    <button @click="restoreModalOpen = false" :disabled="restoring" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
                 </div>
                 <div class="p-6 space-y-4 text-sm text-gray-700">
                     <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                        <div class="text-xs text-gray-500 mb-0.5">Seçilen Yedek Dosyası</div>
+                        <div class="text-xs text-gray-500 mb-0.5">Kaynak: {{ restoreSource === 'drive' ? 'Google Drive yedeği' : restoreSource === 'snapshot' ? 'Anlık görüntü (bu cihaz)' : 'Yüklenen JSON dosyası' }}</div>
                         <div class="font-mono font-bold text-gray-900 break-all">{{ selectedBackup && selectedBackup.name }}</div>
-                        <div class="text-xs text-gray-500 mt-1 flex items-center justify-between">
-                            <span>Tarih: {{ selectedBackup && (selectedBackup.updatedStr || formatDate(selectedBackup.updated)) }}</span>
-                            <span v-if="selectedBackup && selectedBackup.count !== null" class="font-semibold text-blue-600">{{ selectedBackup.count }} Cihaz</span>
-                        </div>
+                        <div class="text-xs text-gray-500 mt-1">{{ selectedBackup && (selectedBackup.updatedStr || (selectedBackup.updated && formatDate(selectedBackup.updated))) }}</div>
                     </div>
+
+                    <!-- Mode selector -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <button @click="restoreMode = 'merge'" :disabled="restoring" class="p-3 rounded-lg border text-left text-xs transition" :class="restoreMode === 'merge' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:bg-gray-50'">
+                            <div class="font-bold text-blue-700"><i class="fa-solid fa-code-merge mr-1"></i>Akıllı Eşle</div>
+                            <div class="text-gray-500 mt-0.5">Mevcutlar korunur, yedektekiler eklenir/güncellenir.</div>
+                        </button>
+                        <button @click="restoreMode = 'replace'" :disabled="restoring" class="p-3 rounded-lg border text-left text-xs transition" :class="restoreMode === 'replace' ? 'border-red-500 bg-red-50 ring-2 ring-red-200' : 'border-gray-200 hover:bg-gray-50'">
+                            <div class="font-bold text-red-700"><i class="fa-solid fa-arrows-rotate mr-1"></i>Sıfırdan Değiştir</div>
+                            <div class="text-gray-500 mt-0.5">Her şey silinir, yalnızca yedek yüklenir.</div>
+                        </button>
+                    </div>
+
+                    <!-- Preview -->
+                    <div v-if="restoreLoading" class="text-center text-xs text-gray-500 py-3"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>Yedek içeriği okunuyor...</div>
+                    <div v-else-if="restorePreviewError" class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs">{{ restorePreviewError }}</div>
+                    <div v-else-if="restoreStats" class="grid grid-cols-4 gap-2 text-center text-xs">
+                        <div class="p-2 rounded-lg bg-gray-50 border"><div class="text-lg font-bold text-gray-800">{{ restoreStats.total }}</div>yedekte</div>
+                        <div class="p-2 rounded-lg bg-emerald-50 border border-emerald-100"><div class="text-lg font-bold text-emerald-700">+{{ restoreStats.added }}</div>eklenecek</div>
+                        <div class="p-2 rounded-lg bg-blue-50 border border-blue-100"><div class="text-lg font-bold text-blue-700">{{ restoreStats.updated }}</div>güncellenecek</div>
+                        <div class="p-2 rounded-lg border" :class="restoreMode === 'replace' && restoreStats.removed ? 'bg-red-50 border-red-200' : 'bg-gray-50'"><div class="text-lg font-bold" :class="restoreMode === 'replace' && restoreStats.removed ? 'text-red-700' : 'text-gray-400'">{{ restoreMode === 'replace' ? '-' + restoreStats.removed : 0 }}</div>silinecek</div>
+                    </div>
+
                     <div v-if="restoreMode === 'replace'" class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs leading-relaxed">
-                        ⚠️ <strong>DİKKAT:</strong> Bu işlem mevcut tüm cihaz kayıtlarını sıfırlayacak ve yalnızca seçilen yedek dosyasındaki kayıtları veritabanına yazacaktır. Bu işlem geri alınamaz!
+                        ⚠️ <strong>DİKKAT:</strong> Mevcut tüm cihaz kayıtları silinip yalnızca bu yedekteki kayıtlar yazılacak.
                     </div>
                     <div v-else class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-xs leading-relaxed">
-                        ℹ️ <strong>Akıllı Eşleştirme:</strong> Mevcut kayıtlarınız silinmez. Aynı ID'ye sahip cihazlar güncellenir, yedekte olup sizde olmayan cihazlar listenize eklenir.
+                        ℹ️ Aynı ID'ye sahip kayıtlar yedektekiyle güncellenir, yedekte olup sizde olmayanlar eklenir. Hiçbir kayıt silinmez.
                     </div>
+                    <label class="flex items-start gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                        <input type="checkbox" v-model="restoreSafety" :disabled="restoring" class="mt-0.5">
+                        <span>İşlemden önce mevcut verinin <strong>güvenlik yedeğini</strong> al (bu cihazda anlık görüntü{{ isCloud && authed ? ' + Drive\'da kopya' : '' }}). Yanlışlık olursa geri alabilirsiniz.</span>
+                    </label>
                 </div>
                 <div class="p-4 bg-gray-50 border-t flex justify-end gap-3">
                     <button @click="restoreModalOpen = false" :disabled="restoring" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition font-medium text-xs">Vazgeç</button>
-                    <button @click="confirmRestore" :disabled="restoring" :class="restoreMode === 'replace' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'" class="px-5 py-2 text-white rounded-lg font-medium text-xs transition flex items-center gap-2 disabled:opacity-50">
+                    <button @click="confirmRestore" :disabled="restoring || restoreLoading || !!restorePreviewError" :class="restoreMode === 'replace' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'" class="px-5 py-2 text-white rounded-lg font-medium text-xs transition flex items-center gap-2 disabled:opacity-50">
                         <i v-if="restoring" class="fa-solid fa-circle-notch fa-spin"></i>
                         <span>{{ restoring ? 'Geri Yükleniyor...' : 'Evet, Geri Yükle' }}</span>
                     </button>
@@ -693,6 +747,7 @@
         const LOCAL_LEGACY_KEY = 'kuzgun_crm_data';
         const PIN_KEY = 'kuzgun_crm_pin';
         const QUEUE_KEY = 'kuzgun_crm_queue_v1';
+        const SNAP_KEY = 'kuzgun_crm_snapshots_v1';
 
         function readJSON(key, fallback) {
             try {
@@ -722,7 +777,7 @@
                     const timer = setTimeout(() => {
                         if (!done) {
                             done = true;
-                            reject(new Error('ZAMAN_ASIMI: Google sunucusundan 25 saniye içinde yanıt alınamadı. Lütfen internet bağlantınızı kontrol edin.'));
+                            reject(new Error('ZAMAN_ASIMI: Google sunucusundan ' + Math.round(timeoutMs / 1000) + ' saniye içinde yanıt alınamadı. Lütfen internet bağlantınızı kontrol edin.'));
                         }
                     }, timeoutMs);
                     try {
@@ -825,7 +880,17 @@
                     restoreModalOpen: false,
                     selectedBackup: null,
                     restoreMode: 'merge',
-                    restoring: false
+                    restoring: false,
+                    restoreSource: 'drive',
+                    restoreDevices: null,
+                    restoreLoading: false,
+                    restorePreviewError: '',
+                    restoreSafety: true,
+                    backupSearch: '',
+                    backupFilter: 'ALL',
+                    backupError: '',
+                    snapshots: [],
+                    MAX_SNAPSHOTS: 5
                 }
             },
             computed: {
@@ -836,6 +901,30 @@
                         'sales': 'Alım & Satım',
                         'backups': 'Yedekleme & Bulut Merkezi'
                     }[this.currentTab]
+                },
+                filteredBackups() {
+                    const q = this.trLower(this.backupSearch);
+                    return this.cloudBackups.filter(b => {
+                        if (this.backupFilter !== 'ALL' && (b.kind || 'normal') !== this.backupFilter) return false;
+                        if (!q) return true;
+                        return this.trLower(b.name).includes(q) || this.trLower(b.updatedStr).includes(q);
+                    });
+                },
+                restoreStats() {
+                    const inc = this.restoreDevices;
+                    if (!inc) return null;
+                    const cur = {};
+                    this.devices.forEach(d => { cur[String(d.id)] = true; });
+                    const seen = {};
+                    let added = 0, updated = 0;
+                    inc.forEach(d => {
+                        const k = String(d.id);
+                        if (seen[k]) return;
+                        seen[k] = true;
+                        if (cur[k]) updated++; else added++;
+                    });
+                    const total = added + updated;
+                    return { total, added, updated, removed: Math.max(0, this.devices.length - updated) };
                 },
                 repairs() {
                     return this.devices.filter(d => d.type === 'REPAIR').sort((a,b) => b.created_at - a.created_at);
@@ -918,6 +1007,7 @@
             },
             mounted() {
                 this.nextFunFact();
+                this.loadSnapshots();
                 this.isCloud = Gas.available();
                 this.pending = readJSON(QUEUE_KEY, []);
                 if (this.isCloud) {
@@ -1211,32 +1301,187 @@
                 async fetchDriveBackups() {
                     if (!this.isCloud || !this.authed) return;
                     this.loadingBackups = true;
+                    this.backupError = '';
                     try {
-                        const list = await Gas.call('listDriveBackups', [this.pinInput]);
+                        const list = await Gas.call('listDriveBackups', [this.pinInput], 60000);
                         this.cloudBackups = Array.isArray(list) ? list : [];
                     } catch (e) {
-                        // Sessiz yakala veya bilgi ver
+                        this.backupError = 'Yedek listesi alınamadı: ' + String((e && e.message) || e);
                     } finally {
                         this.loadingBackups = false;
                     }
                 },
-                openRestoreModal(backup, mode) {
+                loadSnapshots() {
+                    const list = readJSON(SNAP_KEY, []);
+                    this.snapshots = Array.isArray(list) ? list : [];
+                },
+                takeSnapshot(reason, notify) {
+                    try {
+                        const snap = {
+                            id: Date.now() + '-' + Math.floor(Math.random() * 1000),
+                            ts: Date.now(),
+                            reason: reason || 'Anlık görüntü',
+                            count: this.devices.length,
+                            devices: JSON.parse(JSON.stringify(this.devices))
+                        };
+                        let list = [snap].concat(this.snapshots).slice(0, this.MAX_SNAPSHOTS);
+                        // Depolama dolarsa eskileri atarak yeniden dene
+                        while (list.length) {
+                            try { localStorage.setItem(SNAP_KEY, JSON.stringify(list)); break; }
+                            catch (e) { list.pop(); if (!list.length) throw e; }
+                        }
+                        this.snapshots = list;
+                        if (notify) this.showToast('Anlık görüntü alındı (' + snap.count + ' kayıt)', 'ok');
+                        return true;
+                    } catch (e) {
+                        if (notify) this.showToast('Anlık görüntü alınamadı (depolama dolu)', 'error');
+                        return false;
+                    }
+                },
+                removeSnapshot(id) {
+                    this.snapshots = this.snapshots.filter(x => x.id !== id);
+                    writeJSON(SNAP_KEY, this.snapshots);
+                },
+                resetRestoreState() {
+                    this.restoreDevices = null;
+                    this.restoreLoading = false;
+                    this.restorePreviewError = '';
+                },
+                async openRestoreModal(backup, mode) {
+                    this.resetRestoreState();
                     this.selectedBackup = backup;
+                    this.restoreSource = 'drive';
                     this.restoreMode = mode;
                     this.restoreModalOpen = true;
                     this.nextFunFact();
+                    this.restoreLoading = true;
+                    const target = backup;
+                    try {
+                        const data = await Gas.call('getDriveBackup', [this.pinInput, backup.id], 60000);
+                        if (this.selectedBackup !== target) return;
+                        this.restoreDevices = data.devices || [];
+                    } catch (e) {
+                        if (this.selectedBackup !== target) return;
+                        this.restorePreviewError = 'Yedek okunamadı: ' + this.errText(e);
+                    } finally {
+                        if (this.selectedBackup === target) this.restoreLoading = false;
+                    }
+                },
+                openRestoreFromSnapshot(sn) {
+                    this.resetRestoreState();
+                    this.selectedBackup = { name: sn.reason, updated: sn.ts, count: sn.count };
+                    this.restoreSource = 'snapshot';
+                    this.restoreDevices = JSON.parse(JSON.stringify(sn.devices || []));
+                    this.restoreMode = 'replace';
+                    this.restoreModalOpen = true;
+                },
+                errText(e) {
+                    const m = String((e && e.message) || e || '');
+                    if (m.indexOf('PIN_HATALI') !== -1) return 'PIN hatalı.';
+                    if (m.indexOf('YEDEK_BULUNAMADI') !== -1) return 'Yedek dosyası bulunamadı (silinmiş olabilir).';
+                    if (m.indexOf('GECERSIZ_YEDEK') !== -1) return 'Geçersiz yedek dosyası.';
+                    return m;
+                },
+                async downloadDriveBackup(b) {
+                    try {
+                        const data = await Gas.call('getDriveBackup', [this.pinInput, b.id], 60000);
+                        const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), count: data.devices.length, devices: data.devices }, null, 2);
+                        this.saveFile(payload, b.name);
+                        this.showToast(b.name + ' indirildi', 'ok');
+                    } catch (e) {
+                        this.showToast('İndirilemedi: ' + this.errText(e), 'error');
+                    }
+                },
+                async deleteDriveBackup(b) {
+                    if (!confirm(b.name + ' yedeği Drive çöp kutusuna taşınacak. Emin misiniz?')) return;
+                    try {
+                        await Gas.call('deleteDriveBackup', [this.pinInput, b.id]);
+                        this.cloudBackups = this.cloudBackups.filter(x => x.id !== b.id);
+                        this.showToast('Yedek silindi', 'ok');
+                    } catch (e) {
+                        this.showToast('Silinemedi: ' + this.errText(e), 'error');
+                    }
+                },
+                normalizeDevices(list) {
+                    const seen = {};
+                    const out = [];
+                    (list || []).forEach(d => {
+                        if (!d || d.id === undefined || d.id === null || d.id === '') return;
+                        const k = String(d.id);
+                        if (seen[k]) return;
+                        seen[k] = true;
+                        const c = { ...d };
+                        c.updated_at = Number(c.updated_at) || Date.now();
+                        c.created_at = Number(c.created_at) || c.updated_at;
+                        out.push(c);
+                    });
+                    return out;
                 },
                 async confirmRestore() {
-                    if (!this.selectedBackup) return;
+                    if (!this.selectedBackup || this.restoring) return;
+                    const mode = this.restoreMode;
+                    const cloudReady = this.isCloud && this.authed;
+                    if (this.isCloud && !this.authed && mode === 'replace') {
+                        this.showToast('Sıfırdan değiştirmek için önce bulut girişi yapılmalı.', 'error');
+                        return;
+                    }
                     this.restoring = true;
                     try {
-                        const res = await Gas.call('restoreFromDriveBackup', [this.pinInput, this.selectedBackup.id, this.restoreMode]);
-                        this.showToast('Yedek başarıyla geri yüklendi (' + (res.count || 0) + ' kayıt)', 'ok');
-                        this.restoreModalOpen = false;
+                        if (this.restoreSafety) this.takeSnapshot('Geri yükleme öncesi (' + (mode === 'replace' ? 'sıfırdan' : 'eşle') + ')');
+                        let msg = '';
+                        if (this.restoreSource === 'drive') {
+                            const res = await Gas.call('restoreFromDriveBackup', [this.pinInput, this.selectedBackup.id, mode, this.restoreSafety], 120000);
+                            if (mode === 'replace') this.devices = [];
+                            msg = mode === 'replace'
+                                ? res.count + ' kayıt yedekten yüklendi'
+                                : (res.added || 0) + ' eklendi, ' + (res.updated || 0) + ' güncellendi';
+                            if (res.safetyFile) msg += ' · güvenlik yedeği: ' + res.safetyFile;
+                            this.restoreModalOpen = false;
+                            this.resetRestoreState();
+                            this.pending = [];
+                            writeJSON(QUEUE_KEY, this.pending);
+                            await this.pull();
+                            await this.fetchDriveBackups();
+                        } else {
+                            const incoming = this.normalizeDevices(this.restoreDevices);
+                            let result;
+                            if (mode === 'replace') {
+                                result = incoming;
+                            } else {
+                                const map = {};
+                                this.devices.forEach(d => { map[String(d.id)] = d; });
+                                incoming.forEach(d => { map[String(d.id)] = d; });
+                                result = Object.values(map);
+                            }
+                            if (cloudReady) {
+                                if (mode === 'replace') {
+                                    await Gas.call('replaceAllDevices', [this.pinInput, incoming], 120000);
+                                } else {
+                                    for (let i = 0; i < incoming.length; i += 50) {
+                                        await Gas.call('importDevices', [this.pinInput, incoming.slice(i, i + 50)], 60000);
+                                    }
+                                }
+                                this.syncState = 'ok';
+                                this.lastSync = Date.now();
+                            } else if (this.isCloud) {
+                                incoming.forEach(d => this.pending.push({ op: 'upsert', device: d }));
+                                writeJSON(QUEUE_KEY, this.pending);
+                                this.syncState = 'error';
+                            }
+                            if (cloudReady && mode === 'replace') { this.pending = []; writeJSON(QUEUE_KEY, this.pending); }
+                            this.devices = result;
+                            this.cacheLocal();
+                            const st = this.restoreStats;
+                            msg = mode === 'replace'
+                                ? incoming.length + ' kayıt yüklendi'
+                                : (st ? st.added : 0) + ' eklendi, ' + (st ? st.updated : 0) + ' güncellendi';
+                            this.restoreModalOpen = false;
+                            this.resetRestoreState();
+                        }
+                        this.showToast('Geri yükleme tamamlandı: ' + msg, 'ok');
                         this.nextFunFact();
-                        await this.pull();
                     } catch (e) {
-                        this.showToast('Geri yükleme hatası: ' + String((e && e.message) || e), 'error');
+                        this.showToast('Geri yükleme hatası: ' + this.errText(e), 'error');
                     } finally {
                         this.restoring = false;
                     }
@@ -1291,17 +1536,20 @@
                     this.showLogin = true;
                     this.showToast('Çıkış yapıldı', 'ok');
                 },
-                exportBackup() {
-                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), devices: this.devices }, null, 2);
-                    const blob = new Blob([payload], { type: 'application/json' });
+                saveFile(text, name) {
+                    const blob = new Blob([text], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'kuzgun-crm-' + new Date().toISOString().slice(0, 10) + '.json';
+                    a.download = name;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
                     setTimeout(() => URL.revokeObjectURL(url), 1000);
+                },
+                exportBackup() {
+                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), count: this.devices.length, devices: this.devices }, null, 2);
+                    this.saveFile(payload, 'kuzgun-crm-' + new Date().toISOString().slice(0, 10) + '.json');
                     this.showToast(this.devices.length + ' kayıt JSON olarak indirildi', 'ok');
                 },
                 importBackup(e) {
@@ -1309,43 +1557,27 @@
                     e.target.value = '';
                     if (!file) return;
                     const reader = new FileReader();
-                    reader.onload = async () => {
+                    reader.onload = () => {
                         try {
                             const parsed = JSON.parse(reader.result);
-                            const incoming = Array.isArray(parsed) ? parsed : parsed.devices;
+                            const incoming = Array.isArray(parsed) ? parsed : (parsed && parsed.devices);
                             if (!Array.isArray(incoming)) throw new Error('format');
-                            const map = {};
-                            this.devices.forEach(d => { map[String(d.id)] = d; });
-                            let added = 0, updated = 0;
-                            const clean = [];
-                            incoming.forEach(d => {
-                                if (!d || d.id === undefined || d.id === null || d.id === '') return;
-                                d.updated_at = Number(d.updated_at) || Date.now();
-                                if (!d.created_at) d.created_at = d.updated_at;
-                                if (map[String(d.id)]) updated++; else added++;
-                                map[String(d.id)] = d;
-                                clean.push(d);
-                            });
-                            this.devices = Object.values(map);
-                            this.cacheLocal();
-                            if (this.isCloud) {
-                                if (this.authed) {
-                                    for (let i = 0; i < clean.length; i += 50) {
-                                        await Gas.call('importDevices', [this.pinInput, clean.slice(i, i + 50)]);
-                                    }
-                                    this.syncState = 'ok';
-                                    this.lastSync = Date.now();
-                                } else {
-                                    clean.forEach(d => this.pending.push({ op: 'upsert', device: d }));
-                                    writeJSON(QUEUE_KEY, this.pending);
-                                    this.syncState = 'error';
-                                }
+                            const valid = this.normalizeDevices(incoming);
+                            if (!valid.length) {
+                                this.showToast('Dosyada geçerli kayıt bulunamadı', 'error');
+                                return;
                             }
-                            this.showToast(added + ' yeni, ' + updated + ' güncellenen kayıt içe aktarıldı', 'ok');
+                            this.resetRestoreState();
+                            this.selectedBackup = { name: file.name, count: valid.length };
+                            this.restoreSource = 'file';
+                            this.restoreDevices = valid;
+                            this.restoreMode = 'merge';
+                            this.restoreModalOpen = true;
                         } catch (err) {
                             this.showToast('Geçersiz JSON dosyası', 'error');
                         }
                     };
+                    reader.onerror = () => this.showToast('Dosya okunamadı', 'error');
                     reader.readAsText(file);
                 },
                 showToast(msg, kind) {

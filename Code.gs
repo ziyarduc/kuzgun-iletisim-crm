@@ -280,71 +280,90 @@ function backupDaily() {
   return runBackup_(false);
 }
 
-function runBackup_(instant) {
-  var rows = readRows_();
-  var data = rows.map(function (r) {
-    delete r._row;
-    return r;
-  });
+var BACKUP_KEEP = 40;
+
+function getBackupFolder_(create) {
   var props = PropertiesService.getScriptProperties();
   var folder = null;
   var folderId = props.getProperty('BACKUP_FOLDER_ID');
   if (folderId) {
     try {
       folder = DriveApp.getFolderById(folderId);
+      if (folder.isTrashed()) folder = null;
     } catch (err) {
       folder = null;
     }
   }
   if (!folder) {
     var it = DriveApp.getFoldersByName('Kuzgun CRM Yedekleri');
-    if (it.hasNext()) {
-      folder = it.next();
-      props.setProperty('BACKUP_FOLDER_ID', folder.getId());
-    } else {
-      folder = DriveApp.createFolder('Kuzgun CRM Yedekleri');
-      props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+    while (it.hasNext()) {
+      var cand = it.next();
+      if (!cand.isTrashed()) { folder = cand; break; }
     }
+    if (!folder && create) {
+      folder = DriveApp.createFolder('Kuzgun CRM Yedekleri');
+    }
+    if (folder) props.setProperty('BACKUP_FOLDER_ID', folder.getId());
   }
+  return folder;
+}
+
+function cleanDevices_(rows) {
+  return rows.map(function (r) {
+    var c = {};
+    for (var i = 0; i < COLUMNS.length; i++) c[COLUMNS[i]] = r[COLUMNS[i]];
+    return c;
+  });
+}
+
+function runBackup_(instant, prefix) {
+  var data = cleanDevices_(readRows_());
+  var folder = getBackupFolder_(true);
   var day = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   var ts = Utilities.formatDate(new Date(), TZ, 'HHmmss');
-  var name = instant ? ('kuzgun-crm-' + day + '-' + ts + '.json') : ('kuzgun-crm-' + day + '.json');
+  var base = 'kuzgun-crm-' + (prefix ? prefix + '-' : '');
+  var name = instant ? (base + day + '-' + ts + '.json') : (base + day + '.json');
+  if (!instant) {
+    // Günlük yedek aynı gün tekrar çalışırsa kopya yerine üzerine yazar
+    var same = folder.getFilesByName(name);
+    while (same.hasNext()) same.next().setTrashed(true);
+  }
   var json = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), count: data.length, devices: data }, null, 2);
-  
-  var created = folder.createFile(name, json);
-  
+  var created = folder.createFile(name, json, MimeType.PLAIN_TEXT);
+  try { created.setDescription(JSON.stringify({ count: data.length })); } catch (e) {}
+
   var files = folder.getFiles();
   var olds = [];
   while (files.hasNext()) {
     var f = files.next();
-    if (/^kuzgun-crm-.*\.json$/.test(f.getName())) {
-      olds.push(f);
-    }
+    if (/^kuzgun-crm-.*\.json$/.test(f.getName())) olds.push(f);
   }
   olds.sort(function (a, b) {
     return a.getLastUpdated().getTime() - b.getLastUpdated().getTime();
   });
-  for (var i = 0; i < olds.length - 40; i++) {
+  for (var i = 0; i < olds.length - BACKUP_KEEP; i++) {
     olds[i].setTrashed(true);
   }
   return { status: 'ok', file: name, fileId: created.getId(), count: data.length, folder: folder.getName() };
 }
 
+function backupCount_(f) {
+  try {
+    var d = JSON.parse(f.getDescription() || '{}');
+    if (typeof d.count === 'number') return d.count;
+  } catch (e) {}
+  try {
+    var parsed = JSON.parse(f.getBlob().getDataAsString());
+    if (parsed && typeof parsed.count === 'number') return parsed.count;
+    if (parsed && Array.isArray(parsed.devices)) return parsed.devices.length;
+    if (Array.isArray(parsed)) return parsed.length;
+  } catch (err) {}
+  return null;
+}
+
 function listDriveBackups(pin) {
   auth_(pin);
-  var props = PropertiesService.getScriptProperties();
-  var folder = null;
-  var folderId = props.getProperty('BACKUP_FOLDER_ID');
-  if (folderId) {
-    try { folder = DriveApp.getFolderById(folderId); } catch (e) { folder = null; }
-  }
-  if (!folder) {
-    var it = DriveApp.getFoldersByName('Kuzgun CRM Yedekleri');
-    if (it.hasNext()) {
-      folder = it.next();
-      props.setProperty('BACKUP_FOLDER_ID', folder.getId());
-    }
-  }
+  var folder = getBackupFolder_(false);
   if (!folder) return [];
   var files = folder.getFiles();
   var out = [];
@@ -352,22 +371,16 @@ function listDriveBackups(pin) {
     var f = files.next();
     var name = f.getName();
     if (/^kuzgun-crm-.*\.json$/.test(name)) {
-      var size = f.getSize();
       var updated = f.getLastUpdated();
-      var count = null;
-      try {
-        var content = f.getBlob().getDataAsString();
-        var parsed = JSON.parse(content);
-        if (parsed && typeof parsed.count === 'number') count = parsed.count;
-        else if (parsed && Array.isArray(parsed.devices)) count = parsed.devices.length;
-      } catch (err) {}
+      var kind = /^kuzgun-crm-oncesi-/.test(name) ? 'safety' : 'normal';
       out.push({
         id: f.getId(),
         name: name,
-        size: size,
+        size: f.getSize(),
         updated: updated.getTime(),
         updatedStr: Utilities.formatDate(updated, TZ, 'yyyy-MM-dd HH:mm:ss'),
-        count: count
+        count: backupCount_(f),
+        kind: kind
       });
     }
   }
@@ -375,42 +388,99 @@ function listDriveBackups(pin) {
   return out;
 }
 
-function restoreFromDriveBackup(pin, fileId, mode) {
+function getBackupFile_(fileId) {
+  var folder = getBackupFolder_(false);
+  if (!folder) throw new Error('YEDEK_KLASORU_YOK');
+  var file;
+  try {
+    file = DriveApp.getFileById(fileId);
+  } catch (e) {
+    throw new Error('YEDEK_BULUNAMADI');
+  }
+  if (file.isTrashed() || !/^kuzgun-crm-.*\.json$/.test(file.getName())) throw new Error('GECERSIZ_YEDEK');
+  var ok = false;
+  var parents = file.getParents();
+  while (parents.hasNext()) {
+    if (parents.next().getId() === folder.getId()) { ok = true; break; }
+  }
+  if (!ok) throw new Error('GECERSIZ_YEDEK');
+  return file;
+}
+
+function parseBackup_(file) {
+  var parsed = JSON.parse(file.getBlob().getDataAsString());
+  var incoming = Array.isArray(parsed) ? parsed : (parsed && parsed.devices);
+  if (!Array.isArray(incoming)) throw new Error('GECERSIZ_YEDEK_FORMATI');
+  return incoming.filter(function (d) {
+    return d && d.id !== undefined && d.id !== null && d.id !== '';
+  });
+}
+
+function getDriveBackup(pin, fileId) {
   auth_(pin);
-  var file = DriveApp.getFileById(fileId);
-  var content = file.getBlob().getDataAsString();
-  var parsed = JSON.parse(content);
-  var incoming = Array.isArray(parsed) ? parsed : (parsed.devices || []);
-  if (!Array.isArray(incoming)) {
-    throw new Error('GECERSIZ_YEDEK_FORMATI');
-  }
-  if (mode === 'replace') {
-    var lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-    try {
-      var sh = getSheet_();
-      var last = sh.getLastRow();
-      if (last > 1) {
-        sh.deleteRows(2, last - 1);
-      }
-      var appends = [];
-      for (var i = 0; i < incoming.length; i++) {
-        var d = incoming[i];
-        if (!d || d.id === undefined || d.id === null) continue;
-        appends.push(toRow_(d));
-      }
-      if (appends.length) {
-        sh.getRange(2, 1, appends.length, COLUMNS.length).setValues(appends);
-      }
-      return { status: 'ok', mode: 'replace', count: appends.length, name: file.getName() };
-    } finally {
-      lock.releaseLock();
+  var file = getBackupFile_(fileId);
+  var devices = parseBackup_(file);
+  return { name: file.getName(), count: devices.length, devices: devices };
+}
+
+function deleteDriveBackup(pin, fileId) {
+  auth_(pin);
+  var file = getBackupFile_(fileId);
+  file.setTrashed(true);
+  return { status: 'ok' };
+}
+
+function replaceRows_(incoming) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = getSheet_();
+    var last = sh.getLastRow();
+    if (last > 1) {
+      sh.getRange(2, 1, last - 1, COLUMNS.length).clearContent();
     }
-  } else {
-    // mode === 'merge'
-    var res = importDevices(pin, incoming);
-    return { status: 'ok', mode: 'merge', count: incoming.length, imported: res.imported, updated: res.updated, added: res.added, name: file.getName() };
+    var now = Date.now();
+    var appends = [];
+    var seen = {};
+    for (var i = 0; i < incoming.length; i++) {
+      var d = incoming[i];
+      if (!d || d.id === undefined || d.id === null || d.id === '') continue;
+      var key = String(d.id);
+      if (seen[key]) continue;
+      seen[key] = true;
+      d.updated_at = Number(d.updated_at) || now;
+      if (!d.created_at) d.created_at = d.updated_at;
+      appends.push(toRow_(d));
+    }
+    if (appends.length) {
+      sh.getRange(2, 1, appends.length, COLUMNS.length).setValues(appends);
+    }
+    return appends.length;
+  } finally {
+    lock.releaseLock();
   }
+}
+
+function replaceAllDevices(pin, devices) {
+  auth_(pin);
+  var n = replaceRows_(devices || []);
+  return { status: 'ok', count: n };
+}
+
+function restoreFromDriveBackup(pin, fileId, mode, safety) {
+  auth_(pin);
+  var file = getBackupFile_(fileId);
+  var incoming = parseBackup_(file);
+  var safetyFile = null;
+  if (mode === 'replace') {
+    if (safety !== false) {
+      safetyFile = runBackup_(true, 'oncesi').file;
+    }
+    var n = replaceRows_(incoming);
+    return { status: 'ok', mode: 'replace', count: n, name: file.getName(), safetyFile: safetyFile };
+  }
+  var res = importDevices(pin, incoming);
+  return { status: 'ok', mode: 'merge', count: incoming.length, imported: res.imported, updated: res.updated, added: res.added, name: file.getName() };
 }
 
 function setupDailyBackup() {

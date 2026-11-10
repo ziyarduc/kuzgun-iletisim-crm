@@ -9,6 +9,7 @@ Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşt
 *   **Alım & Satım:** Dükkana alınan ve satılan cihazların stok ve fiyat takibi.
 *   **Bulut Senkronizasyon:** Veriler Google Sheets üzerinde tutulur; telefondan, evdeki bilgisayardan veya herhangi bir yerden aynı veriye erişilir. İnternet yoksa uygulama yerel önbellekle çalışmaya devam eder, bağlantı gelince otomatik eşitlenir (bekleyen kuyruk).
 *   **Yedekleme Merkezi (v2.1):** Sol menüde özel 4. sekme! Google Drive'a tek tıkla anlık bulut yedeği alma, Drive'daki geçmiş yedekleri listeleme ve *Akıllı Eşleştirme* veya *Sıfırdan Değiştirme* seçenekleriyle anında geri yükleme.
+*   **Gelişmiş Yedekleme/Geri Yükleme (v2.1):** Geri yükleme öncesi önizleme (kaç kayıt eklenecek/güncellenecek/silinecek), otomatik güvenlik yedeği (Drive + cihazda), son 5 *anlık görüntüden tek tıkla geri alma*, yedek arama/filtre, Drive yedeğini indirme/silme, JSON içe aktarmada Eşle/Sıfırdan seçimi.
 *   **Düzenlenebilir Cihaz Tarihi (v2.1):** Cihaz eklerken varsayılan olarak anlık tarih ve saat otomatik gelir, istenirse takvimden geçmişe veya ileriye dönük serbestçe değiştirilebilir.
 *   **Tarihe Göre Arama ve Hızlı Filtreler (v2.1):** Başlangıç ve bitiş tarih aralığı seçici ile *Bugün, Bu Hafta, Bu Ay, Tümü* hızlı butonları.
 *   **Minecraft Tarzı Fun Fact Penceresi (v2.1):** Sol kenar çubuğunda ve Gösterge Paneli üstünde telefonlar ve otomobiller hakkında 30+ adet rastgele eğlenceli bilgi sunan dinamik bilgi penceresi; her açılışta, modal açma/kapatmalarda, tıklandığında ve çıkış ekranında Minecraft açılış metinleri (splash text) gibi sürpriz bilgiler gösterir.
@@ -53,7 +54,7 @@ Hiçbir soru sormadan tam otomatik olarak çalışır:
 
 Varsayılan PIN: `kuzgun2024` — uygulama içinden **Ayarlar (dişli) → PIN değiştir** ile değiştirin (veya editörde **Proje ayarları → Script özellikleri → `ACCESS_PIN`**).
 
-İlk açılışta veriler otomatik olarak `devices` sayfasına yazılır. Günlük Drive yedeği için uygulamadaki **Ayarlar → "Günlük Drive Yedeğini Kur / Onar"** düğmesini kullanın; elle tetiklemek isteyen editörde `setupDailyBackup` fonksiyonunu bir kez çalıştırır (sonuç: 03:00'te her gün `Kuzgun CRM Yedekleri` klasörüne JSON atar, son 30 gün saklanır).
+İlk açılışta veriler otomatik olarak `devices` sayfasına yazılır. Günlük Drive yedeği için uygulamadaki **Ayarlar → "Günlük Drive Yedeğini Kur / Onar"** düğmesini kullanın; elle tetiklemek isteyen editörde `setupDailyBackup` fonksiyonunu bir kez çalıştırır (sonuç: 03:00'te her gün `Kuzgun CRM Yedekleri` klasörüne JSON atar, son 40 yedek saklanır).
 
 ### Yedekten geri yükleme
 
