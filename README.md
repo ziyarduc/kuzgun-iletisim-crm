@@ -11,6 +11,7 @@ Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşt
 *   **Yedekleme Merkezi (v2.1):** Sol menüde özel 4. sekme! Google Drive'a tek tıkla anlık bulut yedeği alma, Drive'daki geçmiş yedekleri listeleme ve *Akıllı Eşleştirme* veya *Sıfırdan Değiştirme* seçenekleriyle anında geri yükleme.
 *   **Düzenlenebilir Cihaz Tarihi (v2.1):** Cihaz eklerken varsayılan olarak anlık tarih ve saat otomatik gelir, istenirse takvimden geçmişe veya ileriye dönük serbestçe değiştirilebilir.
 *   **Tarihe Göre Arama ve Hızlı Filtreler (v2.1):** Başlangıç ve bitiş tarih aralığı seçici ile *Bugün, Bu Hafta, Bu Ay, Tümü* hızlı butonları.
+*   **Minecraft Tarzı Fun Fact Penceresi (v2.1):** Sol kenar çubuğunda ve Gösterge Paneli üstünde telefonlar ve otomobiller hakkında 30+ adet rastgele eğlenceli bilgi sunan dinamik bilgi penceresi; her açılışta, modal açma/kapatmalarda, tıklandığında ve çıkış ekranında Minecraft açılış metinleri (splash text) gibi sürpriz bilgiler gösterir.
 *   **Güvenli Kapatma & Donma Koruması (v2.1):** Arayüzde "Programı Kapat" butonu, arka plan süreç kilitlenmesini engelleyen temiz süreç yönetimi ve ağ zaman aşımı (timeout) koruması.
 *   **Ayarlar Paneli:** PIN değiştirme, veritabanı (Sheet) bağlantısına tek tık, günlük Drive yedeğini kurma/onarma ve çıkış.
 

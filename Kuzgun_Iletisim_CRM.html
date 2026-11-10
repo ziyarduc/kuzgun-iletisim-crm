@@ -41,6 +41,26 @@
                         <i class="fa-solid fa-cloud-arrow-up w-6 text-center mr-2"></i> Yedekleme Merkezi
                     </a>
                 </nav>
+
+                <!-- Minecraft Style Fun Fact Widget in Sidebar -->
+                <div class="px-3 py-2.5 mx-3 mb-2 rounded-xl bg-gray-800/80 border border-gray-700/60 text-xs shadow-inner relative group select-none transition hover:border-yellow-500/50">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="flex items-center gap-1.5 font-bold text-yellow-400 text-[11px] uppercase tracking-wider">
+                            <span class="inline-block animate-pulse">✨</span> Biliyor muydunuz?
+                        </span>
+                        <button @click="nextFunFact" class="text-gray-400 hover:text-yellow-400 transition text-[11px] flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-900/60 hover:bg-gray-700" title="Rastgele yeni bilgi">
+                            <i class="fa-solid fa-dice"></i>
+                        </button>
+                    </div>
+                    <p class="text-gray-300 text-[11px] leading-relaxed cursor-pointer font-sans" @click="nextFunFact" title="Tıklayarak yeni bilgiye geç">
+                        <span class="mr-1 text-sm">{{ currentFact.emoji }}</span>{{ currentFact.text }}
+                    </p>
+                    <div class="mt-2 flex items-center justify-between text-[10px] text-gray-500 font-mono">
+                        <span>{{ currentFact.category === 'car' ? '🚗 Otomobil' : '📱 Telefon' }}</span>
+                        <span class="text-yellow-500/70 group-hover:text-yellow-400 text-[9px]">tıkla 🎲</span>
+                    </div>
+                </div>
+
                 <div class="p-4 border-t border-gray-800 text-xs text-gray-500 text-center">
                     <template v-if="isCloud">
                         <div class="mb-1 text-emerald-400"><i class="fa-solid fa-cloud mr-1"></i> Google Sheets bağlantılı</div>
@@ -88,6 +108,26 @@
                 <div class="flex-1 overflow-y-auto p-6">
                     <!-- Dashboard -->
                     <div v-if="currentTab === 'dashboard'">
+                        <!-- Minecraft Style Splash Banner -->
+                        <div class="mb-6 bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50 border border-yellow-200/90 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm cursor-pointer hover:shadow-md transition select-none group" @click="nextFunFact" title="Başka bir rastgele bilgi için tıklayın (Minecraft Splash)">
+                            <div class="flex items-center gap-3.5">
+                                <span class="w-10 h-10 rounded-xl bg-yellow-400/25 text-yellow-700 flex items-center justify-center text-xl flex-shrink-0 group-hover:scale-110 transition transform">
+                                    {{ currentFact.emoji }}
+                                </span>
+                                <div>
+                                    <div class="text-[11px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-2 font-mono">
+                                        <span>✨ Biliyor Muydunuz?</span>
+                                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-yellow-200/80 text-yellow-900 font-semibold">{{ currentFact.category === 'car' ? '🚗 Otomobil Dünyası' : '📱 Telefon & Teknoloji' }}</span>
+                                    </div>
+                                    <div class="text-sm text-gray-800 font-medium mt-1 leading-snug">{{ currentFact.text }}</div>
+                                </div>
+                            </div>
+                            <button class="text-amber-800 hover:text-amber-950 bg-yellow-200/70 hover:bg-yellow-300 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition flex-shrink-0 shadow-xs">
+                                <i class="fa-solid fa-dice text-sm"></i>
+                                <span class="hidden sm:inline">Rastgele Bilgi</span>
+                            </button>
+                        </div>
+
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                             <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-blue-500 flex items-center justify-between">
                                 <div>
@@ -700,9 +740,43 @@
             }
         };
 
+        const FUN_FACTS = [
+            { category: 'phone', emoji: '📱', text: 'Dünyanın ilk cep telefonu araması 1973 yılında Martin Cooper tarafından Motorola DynaTAC ile yapıldı (cihaz tam 1.1 kg ağırlığındaydı).' },
+            { category: 'phone', emoji: '📞', text: 'Tarihin en çok satan telefonu, 250 milyondan fazla adetle efsanevi Nokia 1100 modelidir.' },
+            { category: 'phone', emoji: '⚡', text: 'İlk akıllı telefon kabul edilen IBM Simon, 1992 yılında dokunmatik ekran, takvim ve e-posta desteğiyle çıkmıştı.' },
+            { category: 'phone', emoji: '📸', text: 'İlk kameralı cep telefonu 1999\'da Japonya\'da çıkan Kyocera VP-210 modelidir ve ön kamerasıyla 20 fotoğraf çekebiliyordu!' },
+            { category: 'phone', emoji: '🚀', text: 'Cebinizdeki sıradan bir akıllı telefon, 1969\'da Apollo 11\'i Ay\'a indiren NASA bilgisayarından milyonlarca kat daha güçlüdür.' },
+            { category: 'phone', emoji: '✉️', text: '1992 yılında dünyada gönderilen ilk SMS metni sadece iki kelimeydi: "Merry Christmas" (Mutlu Noeller).' },
+            { category: 'phone', emoji: '💧', text: 'Suya düşen telefonu pirince koymak yerine silika jel veya hava akımı kullanmak 3 kat daha hızlı kurutur.' },
+            { category: 'phone', emoji: '👆', text: 'Ortalama bir kullanıcı akıllı telefon ekranına günde 2.617 kez dokunmakta veya kaydırmaktadır.' },
+            { category: 'phone', emoji: '🦠', text: 'Cep telefonu ekranlarında ortalama bir klozet kapağından 10 kat daha fazla bakteri birikebilir; düzenli temizlik önemlidir!' },
+            { category: 'phone', emoji: '🌈', text: 'İlk renkli ekranlı cep telefonu 1997 yılında çıkan Siemens S10\'dur ve sadece 4 renk (kırmızı, yeşil, mavi, beyaz) gösterebiliyordu.' },
+            { category: 'phone', emoji: '🍏', text: '2007 yılında ilk iPhone tanıtıldığında App Store yoktu; kullanıcılar yalnızca dahili Apple uygulamalarını kullanabiliyordu.' },
+            { category: 'phone', emoji: '🤖', text: 'Android işletim sistemi 2003 yılında ilk geliştirildiğinde telefonlar için değil, dijital fotoğraf makineleri için tasarlanmıştı.' },
+            { category: 'phone', emoji: '📶', text: 'Bluetooth teknolojisi adını, 10. yüzyılda İskandinav kabilelerini birleştiren Danimarka Kralı Harald "Bluetooth" Gormsson\'dan almıştır.' },
+            { category: 'phone', emoji: '📳', text: 'Telefonlardaki titreşim motorları, ağırlık merkezi kaydırılmış küçük bir eksantrik diskin hızla döndürülmesiyle sarsıntı üretir.' },
+            { category: 'phone', emoji: '🔋', text: 'Kablosuz şarj teknolojisinin temelleri 1890\'larda Nikola Tesla\'nın manyetik indüksiyon deneylerine dayanmaktadır.' },
+            { category: 'phone', emoji: '🧊', text: 'Lityum-iyon bataryalar aşırı soğukta geçici olarak voltaj kaybeder, bu yüzden dondurucu havalarda telefonlar aniden kapanabilir.' },
+            { category: 'car', emoji: '🚗', text: 'Dünyanın ilk modern otomobili Carl Benz tarafından 1886 yılında patentlenen üç tekerlekli "Benz Patent-Motorwagen"dir.' },
+            { category: 'car', emoji: '🔩', text: 'Modern bir binek otomobilde yaklaşık 30.000 bağımsız parça ve 1 kilometreden uzun kablo tesisatı bulunur.' },
+            { category: 'car', emoji: '🅿️', text: 'Dünyadaki otomobillerin ortalama %95\'i ömrü boyunca otoparkta park halinde yatarak beklemektedir.' },
+            { category: 'car', emoji: '🛡️', text: 'Üç noktalı emniyet kemerini 1959\'da Volvo icat etti ve tüm insanlığın can güvenliği için patentini ücretsiz halka açtı.' },
+            { category: 'car', emoji: '🏎️', text: 'Dünyanın en hızlı seri üretim otomobili 490.48 km/s hıza ulaşan Bugatti Chiron Super Sport 300+ modelidir.' },
+            { category: 'car', emoji: '✨', text: 'Yeni araba kokusu; iç mekandaki deri, kumaş ve yapıştırıcılardan salınan 50\'den fazla organik bileşenin karışımıdır.' },
+            { category: 'car', emoji: '🔌', text: 'Dünyanın ilk hibrit otomobili 1900 yılında 25 yaşındaki Ferdinand Porsche tarafından tasarlanan Lohner-Porsche modelidir.' },
+            { category: 'car', emoji: '🏁', text: 'Bir Formula 1 aracı saatte 240 km üzerinde hızlandığında tünel tavanında baş aşağı düşmeden gidebilecek basma kuvveti üretir!' },
+            { category: 'car', emoji: '🏆', text: 'Tarihte en çok satan otomobil modeli, 50 milyondan fazla satış başarısıyla Toyota Corolla\'dır.' },
+            { category: 'car', emoji: '🎯', text: 'Hız sabitleyiciyi (Cruise Control) 1948 yılında icat eden Ralph Teetor tamamen görme engelli bir mühendisti.' },
+            { category: 'car', emoji: '🔥', text: '3.000 devirde dönen 4 silindirli bir motorda bujiler dakikada tam 6.000 kez kıvılcım çakar!' },
+            { category: 'car', emoji: '🐂', text: 'Lamborghini süper spor otomobillere başlamadan önce sadece traktör ve klima üretiyordu.' },
+            { category: 'car', emoji: '💎', text: 'Tarihin en pahalı klasik otomobili, 2022\'de 135 milyon Euro\'ya satılan 1955 model Mercedes-Benz 300 SLR Uhlenhaut Coupé\'dir.' },
+            { category: 'car', emoji: '💥', text: 'Otomobil hava yastıkları çarpışma algılandıktan sadece 30-40 milisaniye sonra saatte 300 km hızla açılır.' }
+        ];
+
         createApp({
             data() {
                 return {
+                    currentFact: FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)],
                     currentTab: 'dashboard',
                     devices: [],
                     searchQuery: '',
@@ -830,6 +904,7 @@
                 }
             },
             mounted() {
+                this.nextFunFact();
                 this.isCloud = Gas.available();
                 this.pending = readJSON(QUEUE_KEY, []);
                 if (this.isCloud) {
@@ -846,6 +921,16 @@
                 window.removeEventListener('online', this.onOnline);
             },
             methods: {
+                nextFunFact() {
+                    if (!FUN_FACTS || FUN_FACTS.length === 0) return;
+                    let next;
+                    let tries = 0;
+                    do {
+                        next = FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)];
+                        tries++;
+                    } while (tries < 10 && FUN_FACTS.length > 1 && next && this.currentFact && next.text === this.currentFact.text);
+                    this.currentFact = next || FUN_FACTS[0];
+                },
                 trLower(str) {
                     return str ? String(str).toLocaleLowerCase('tr-TR').trim() : '';
                 },
@@ -907,11 +992,21 @@
                             window.close();
                         } catch (e) {}
                         setTimeout(() => {
+                            const fact = this.currentFact || FUN_FACTS[0];
                             document.body.innerHTML = `
                                 <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;background:#111827;color:#f3f4f6;text-align:center;padding:20px;">
                                     <div style="font-size:54px;margin-bottom:16px;">🦅</div>
                                     <h2 style="font-size:24px;font-weight:bold;margin-bottom:8px;">Kuzgun İletişim CRM Kapatıldı</h2>
                                     <p style="color:#9ca3af;max-width:440px;font-size:14px;line-height:1.6;">Oturumunuz ve tüm verileriniz başarıyla kaydedildi. Tarayıcı sekmesini veya pencereyi güvenle kapatabilirsiniz.</p>
+                                    
+                                    <div style="margin-top:20px;background:#1f2937;border:1px solid #374151;border-radius:12px;padding:16px 20px;max-width:480px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.3);text-align:left;">
+                                        <div style="color:#f59e0b;font-weight:700;font-size:11px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;justify-content:space-between;">
+                                            <span>✨ Kapanış Bilgisi (${fact.category === 'car' ? '🚗 Otomobil' : '📱 Telefon'})</span>
+                                            <span style="font-size:10px;color:#9ca3af;font-family:monospace;">Minecraft Splash</span>
+                                        </div>
+                                        <div style="font-size:13px;color:#e5e7eb;line-height:1.5;">${fact.emoji} ${fact.text}</div>
+                                    </div>
+
                                     <button onclick="location.reload()" style="margin-top:24px;padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Tekrar Aç</button>
                                 </div>
                             `;
@@ -1108,6 +1203,7 @@
                     this.selectedBackup = backup;
                     this.restoreMode = mode;
                     this.restoreModalOpen = true;
+                    this.nextFunFact();
                 },
                 async confirmRestore() {
                     if (!this.selectedBackup) return;
@@ -1116,6 +1212,7 @@
                         const res = await Gas.call('restoreFromDriveBackup', [this.pinInput, this.selectedBackup.id, this.restoreMode]);
                         this.showToast('Yedek başarıyla geri yüklendi (' + (res.count || 0) + ' kayıt)', 'ok');
                         this.restoreModalOpen = false;
+                        this.nextFunFact();
                         await this.pull();
                     } catch (e) {
                         this.showToast('Geri yükleme hatası: ' + String((e && e.message) || e), 'error');
@@ -1129,6 +1226,7 @@
                     this.newPin2 = '';
                     this.pinMsg = '';
                     this.pinMsgOk = false;
+                    this.nextFunFact();
                 },
                 async changePin() {
                     this.pinMsgOk = false;
@@ -1267,9 +1365,11 @@
                     this.editingDevice = null;
                     this.form = this.getEmptyForm(type);
                     this.isModalOpen = true;
+                    this.nextFunFact();
                 },
                 closeModal() {
                     this.isModalOpen = false;
+                    this.nextFunFact();
                 },
                 editDevice(device) {
                     this.editingDevice = device;
@@ -1280,6 +1380,7 @@
                         created_at_str: d.toISOString().slice(0, 16)
                     };
                     this.isModalOpen = true;
+                    this.nextFunFact();
                 },
                 saveDevice() {
                     let targetDate = Date.now();
