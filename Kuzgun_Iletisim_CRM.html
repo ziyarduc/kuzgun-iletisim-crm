@@ -37,6 +37,9 @@
                     <a href="#" @click.prevent="currentTab = 'sales'; sidebarOpen = false" :class="{'bg-gray-800 text-blue-400': currentTab === 'sales'}" class="flex items-center p-3 rounded hover:bg-gray-800 transition">
                         <i class="fa-solid fa-store w-6 text-center mr-2"></i> Alım & Satım
                     </a>
+                    <a href="#" @click.prevent="currentTab = 'backups'; sidebarOpen = false; if (isCloud && authed) fetchDriveBackups()" :class="{'bg-gray-800 text-blue-400': currentTab === 'backups'}" class="flex items-center p-3 rounded hover:bg-gray-800 transition">
+                        <i class="fa-solid fa-cloud-arrow-up w-6 text-center mr-2"></i> Yedekleme Merkezi
+                    </a>
                 </nav>
                 <div class="p-4 border-t border-gray-800 text-xs text-gray-500 text-center">
                     <template v-if="isCloud">
@@ -50,7 +53,7 @@
                     <template v-else>
                         <div class="mb-1 text-yellow-400"><i class="fa-solid fa-hard-drive mr-1"></i> Yerel mod (bu cihaz)</div>
                     </template>
-                    Kuzgun İletişim Yönetim Sistemi<br>v1.2.0
+                    Kuzgun İletişim Yönetim Sistemi<br>v2.1.0
                 </div>
             </aside>
 
@@ -69,19 +72,15 @@
                         <span class="hidden sm:inline text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full border">
                             <i class="fa-regular fa-calendar mr-1"></i> {{ new Date().toLocaleDateString('tr-TR') }}
                         </span>
-                        <button v-if="isCloud && authed" @click="backupToDrive" title="Google Drive'a günlük yedek al" class="text-sm bg-emerald-600 text-white px-3 py-1.5 rounded-full hover:bg-emerald-700 transition">
-                            <i class="fa-brands fa-google-drive"></i><span class="hidden sm:inline ml-1">Drive'a Yedekle</span>
+                        <button @click="currentTab = 'backups'; if (isCloud && authed) fetchDriveBackups()" title="Yedekleme ve Bulut Merkezi" class="text-sm bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-full hover:bg-blue-100 transition">
+                            <i class="fa-solid fa-cloud-arrow-up mr-1"></i><span class="hidden sm:inline">Yedekleme</span>
                         </button>
-                        <button v-if="isCloud && authed" @click="openSettings" title="Ayarlar (PIN, yedek, bağlantı)" class="text-sm bg-gray-200 text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300 transition">
+                        <button v-if="isCloud && authed" @click="openSettings" title="Ayarlar (PIN, bağlantı)" class="text-sm bg-gray-200 text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300 transition">
                             <i class="fa-solid fa-gear"></i>
                         </button>
-                        <button @click="exportBackup" title="Tüm kayıtları JSON dosyası olarak indir" class="text-sm bg-gray-200 text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300 transition">
-                            <i class="fa-solid fa-file-export"></i><span class="hidden sm:inline ml-1">Dışa Aktar</span>
+                        <button @click="exitApplication" title="Programı Kapat / Çıkış" class="text-sm bg-red-50 text-red-700 border border-red-200 px-3 py-1.5 rounded-full hover:bg-red-100 transition">
+                            <i class="fa-solid fa-power-off mr-1"></i><span class="hidden sm:inline">Kapat</span>
                         </button>
-                        <label title="JSON yedeği içe aktar" class="text-sm bg-gray-200 text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300 transition cursor-pointer">
-                            <i class="fa-solid fa-file-import"></i><span class="hidden sm:inline ml-1">İçe Aktar</span>
-                            <input type="file" accept="application/json,.json" class="hidden" @change="importBackup">
-                        </label>
                     </div>
                 </header>
 
@@ -161,15 +160,33 @@
                     </div>
 
                     <!-- Repairs Tab -->
-                    <div v-if="currentTab === 'repairs'">
-                        <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-                            <div class="relative w-full sm:w-96">
-                                <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
-                                <input type="text" v-model="searchQuery" placeholder="Ara (Marka, Model, Müşteri, IMEI)..." class="pl-10 p-2 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    <div v-if="currentTab === 'repairs'" class="space-y-4">
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-3">
+                            <div class="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+                                <div class="relative flex-1">
+                                    <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
+                                    <input type="text" v-model="searchQuery" placeholder="Ara (Marka, Model, Müşteri, IMEI, Seri No)..." class="pl-10 pr-8 p-2 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm">
+                                    <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 text-sm">&times;</button>
+                                </div>
+                                <button @click="openModal('REPAIR')" class="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium flex items-center justify-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-plus"></i> Yeni Tamir Kaydı
+                                </button>
                             </div>
-                            <button @click="openModal('REPAIR')" class="w-full sm:w-auto bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition shadow-sm font-medium">
-                                <i class="fa-solid fa-plus mr-2"></i>Yeni Tamir Kaydı
-                            </button>
+                            <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100 text-xs">
+                                <span class="text-gray-500 font-semibold flex items-center gap-1"><i class="fa-regular fa-calendar"></i> Tarih Filtresi:</span>
+                                <div class="flex items-center gap-1">
+                                    <input type="date" v-model="dateFilterStart" class="p-1.5 border border-gray-300 rounded bg-white text-gray-700 focus:ring-1 focus:ring-blue-500 outline-none" title="Başlangıç Tarihi">
+                                    <span class="text-gray-400">-</span>
+                                    <input type="date" v-model="dateFilterEnd" class="p-1.5 border border-gray-300 rounded bg-white text-gray-700 focus:ring-1 focus:ring-blue-500 outline-none" title="Bitiş Tarihi">
+                                    <button v-if="dateFilterStart || dateFilterEnd" @click="setQuickDate('ALL')" class="text-gray-400 hover:text-red-500 px-1" title="Tarihleri Temizle"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+                                <div class="flex items-center gap-1 ml-auto">
+                                    <button @click="setQuickDate('ALL')" :class="dateFilterQuick === 'ALL' && !dateFilterStart && !dateFilterEnd ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'" class="px-2.5 py-1 rounded transition font-medium">Tümü</button>
+                                    <button @click="setQuickDate('TODAY')" :class="dateFilterQuick === 'TODAY' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'" class="px-2.5 py-1 rounded transition font-medium">Bugün</button>
+                                    <button @click="setQuickDate('WEEK')" :class="dateFilterQuick === 'WEEK' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'" class="px-2.5 py-1 rounded transition font-medium">Bu Hafta</button>
+                                    <button @click="setQuickDate('MONTH')" :class="dateFilterQuick === 'MONTH' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'" class="px-2.5 py-1 rounded transition font-medium">Bu Ay</button>
+                                </div>
+                            </div>
                         </div>
                         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
                             <table class="w-full text-left min-w-[640px]">
@@ -212,15 +229,33 @@
                     </div>
 
                     <!-- Sales Tab -->
-                    <div v-if="currentTab === 'sales'">
-                        <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-                            <div class="relative w-full sm:w-96">
-                                <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
-                                <input type="text" v-model="searchQuery" placeholder="Ara (Marka, Model, IMEI)..." class="pl-10 p-2 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    <div v-if="currentTab === 'sales'" class="space-y-4">
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-3">
+                            <div class="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+                                <div class="relative flex-1">
+                                    <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
+                                    <input type="text" v-model="searchQuery" placeholder="Ara (Marka, Model, IMEI, Seri No)..." class="pl-10 pr-8 p-2 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm">
+                                    <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 text-sm">&times;</button>
+                                </div>
+                                <button @click="openModal('SALE')" class="bg-green-600 text-white px-5 py-2.5 rounded-lg hover:bg-green-700 transition shadow-sm font-medium flex items-center justify-center gap-2 text-sm whitespace-nowrap">
+                                    <i class="fa-solid fa-plus"></i> Yeni Alınan Cihaz
+                                </button>
                             </div>
-                            <button @click="openModal('SALE')" class="w-full sm:w-auto bg-green-600 text-white px-5 py-2.5 rounded-lg hover:bg-green-700 transition shadow-sm font-medium">
-                                <i class="fa-solid fa-plus mr-2"></i>Yeni Alınan Cihaz
-                            </button>
+                            <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100 text-xs">
+                                <span class="text-gray-500 font-semibold flex items-center gap-1"><i class="fa-regular fa-calendar"></i> Tarih Filtresi:</span>
+                                <div class="flex items-center gap-1">
+                                    <input type="date" v-model="dateFilterStart" class="p-1.5 border border-gray-300 rounded bg-white text-gray-700 focus:ring-1 focus:ring-blue-500 outline-none" title="Başlangıç Tarihi">
+                                    <span class="text-gray-400">-</span>
+                                    <input type="date" v-model="dateFilterEnd" class="p-1.5 border border-gray-300 rounded bg-white text-gray-700 focus:ring-1 focus:ring-blue-500 outline-none" title="Bitiş Tarihi">
+                                    <button v-if="dateFilterStart || dateFilterEnd" @click="setQuickDate('ALL')" class="text-gray-400 hover:text-red-500 px-1" title="Tarihleri Temizle"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+                                <div class="flex items-center gap-1 ml-auto">
+                                    <button @click="setQuickDate('ALL')" :class="dateFilterQuick === 'ALL' && !dateFilterStart && !dateFilterEnd ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'" class="px-2.5 py-1 rounded transition font-medium">Tümü</button>
+                                    <button @click="setQuickDate('TODAY')" :class="dateFilterQuick === 'TODAY' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'" class="px-2.5 py-1 rounded transition font-medium">Bugün</button>
+                                    <button @click="setQuickDate('WEEK')" :class="dateFilterQuick === 'WEEK' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'" class="px-2.5 py-1 rounded transition font-medium">Bu Hafta</button>
+                                    <button @click="setQuickDate('MONTH')" :class="dateFilterQuick === 'MONTH' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'" class="px-2.5 py-1 rounded transition font-medium">Bu Ay</button>
+                                </div>
+                            </div>
                         </div>
                         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
                             <table class="w-full text-left min-w-[640px]">
@@ -258,6 +293,129 @@
                             </table>
                         </div>
                     </div>
+
+                    <!-- Backups Tab -->
+                    <div v-if="currentTab === 'backups'" class="space-y-6">
+                        <!-- Overview Status Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
+                                <div class="text-gray-500 text-xs font-semibold uppercase mb-1">Mevcut Veritabanı</div>
+                                <div class="text-2xl font-bold text-gray-800">{{ devices.length }} Kayıt</div>
+                                <div class="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                                    <i class="fa-solid fa-database text-blue-500"></i>
+                                    <span v-if="isCloud && statusInfo">{{ statusInfo.spreadsheet }}</span>
+                                    <span v-else>Yerel Tarayıcı Deposu</span>
+                                </div>
+                            </div>
+                            <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-emerald-500">
+                                <div class="text-gray-500 text-xs font-semibold uppercase mb-1">Google Drive Yedekleri</div>
+                                <div class="text-2xl font-bold text-gray-800">{{ cloudBackups.length }} Dosya</div>
+                                <div class="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                                    <i class="fa-brands fa-google-drive text-emerald-500"></i>
+                                    <span>Kuzgun CRM Yedekleri Klasörü</span>
+                                </div>
+                            </div>
+                            <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-purple-500">
+                                <div class="text-gray-500 text-xs font-semibold uppercase mb-1">Otomatik Günlük Yedek</div>
+                                <div class="text-lg font-bold" :class="statusInfo && statusInfo.dailyBackupActive ? 'text-emerald-600' : 'text-gray-700'">
+                                    {{ statusInfo && statusInfo.dailyBackupActive ? '✅ Aktif (Her Gün 03:00)' : '⚠️ Devre Dışı' }}
+                                </div>
+                                <div class="text-xs text-gray-500 mt-2">
+                                    <button @click="installBackup" class="underline text-purple-600 hover:text-purple-800">
+                                        {{ statusInfo && statusInfo.dailyBackupActive ? 'Tetikleyiciyi Yenile' : 'Hemen Kur / Aktif Et' }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Bar -->
+                        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                    <i class="fa-solid fa-cloud-arrow-up text-blue-600"></i>
+                                    Yedekleme ve Geri Yükleme İşlemleri
+                                </h3>
+                                <p class="text-xs text-gray-500 mt-1">Verilerinizi tek tıkla Google Drive bulutuna yedekleyin veya cihazınıza JSON formatında indirin.</p>
+                            </div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <button v-if="isCloud && authed" @click="backupToDriveNow" :disabled="backupRunning" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm flex items-center gap-2 disabled:opacity-50">
+                                    <i class="fa-solid fa-cloud-arrow-up" :class="{'fa-spin': backupRunning}"></i>
+                                    <span>Şimdi Drive'a Yedekle</span>
+                                </button>
+                                <button @click="exportBackup" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm flex items-center gap-2">
+                                    <i class="fa-solid fa-download"></i>
+                                    <span>Yerel JSON İndir</span>
+                                </button>
+                                <label class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition border border-gray-300 cursor-pointer flex items-center gap-2">
+                                    <i class="fa-solid fa-upload"></i>
+                                    <span>JSON Dosyası Yükle</span>
+                                    <input type="file" accept="application/json,.json" class="hidden" @change="importBackup">
+                                </label>
+                                <button v-if="isCloud && authed" @click="fetchDriveBackups" :disabled="loadingBackups" title="Yedek listesini yenile" class="bg-gray-100 hover:bg-gray-200 text-gray-700 p-2 rounded-lg text-sm border border-gray-300">
+                                    <i class="fa-solid fa-rotate" :class="{'fa-spin': loadingBackups}"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Drive Backups List Table -->
+                        <div v-if="isCloud && authed" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                                <h4 class="font-bold text-gray-800 flex items-center gap-2 text-sm">
+                                    <i class="fa-brands fa-google-drive text-emerald-600"></i>
+                                    Google Drive Bulut Yedekleri (Son 30 Gün)
+                                </h4>
+                                <span class="text-xs text-gray-500 font-medium">{{ cloudBackups.length }} kayıt bulundu</span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left min-w-[640px]">
+                                    <thead class="bg-gray-50/50 border-b text-xs text-gray-600 uppercase">
+                                        <tr>
+                                            <th class="p-4">Yedek Dosyası</th>
+                                            <th class="p-4">Yedekleme Tarihi</th>
+                                            <th class="p-4">Kayıt Sayısı</th>
+                                            <th class="p-4">Boyut</th>
+                                            <th class="p-4 text-right">Geri Yükle</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="text-sm divide-y divide-gray-100">
+                                        <tr v-for="b in cloudBackups" :key="b.id" class="hover:bg-gray-50 transition">
+                                            <td class="p-4 font-mono font-medium text-gray-800">
+                                                <i class="fa-regular fa-file-code text-blue-500 mr-2"></i>{{ b.name }}
+                                            </td>
+                                            <td class="p-4 text-gray-600">{{ b.updatedStr || formatDate(b.updated) }}</td>
+                                            <td class="p-4">
+                                                <span class="px-2.5 py-1 text-xs rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-100">
+                                                    {{ b.count !== null ? b.count + ' Cihaz' : '-' }}
+                                                </span>
+                                            </td>
+                                            <td class="p-4 text-xs text-gray-500">{{ formatBytes(b.size) }}</td>
+                                            <td class="p-4 text-right space-x-2">
+                                                <button @click="openRestoreModal(b, 'merge')" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold transition" title="Mevcut kayıtları koruyarak eşleştirip geri yükler">
+                                                    <i class="fa-solid fa-code-merge mr-1"></i>Akıllı Eşle
+                                                </button>
+                                                <button @click="openRestoreModal(b, 'replace')" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-semibold transition" title="Mevcut verileri temizleyip birebir yedeği yükler">
+                                                    <i class="fa-solid fa-arrows-rotate mr-1"></i>Sıfırdan Değiştir
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="cloudBackups.length === 0">
+                                            <td colspan="5" class="p-12 text-center text-gray-500">
+                                                <i class="fa-solid fa-cloud-arrow-up text-3xl mb-2 text-gray-300 block"></i>
+                                                {{ loadingBackups ? 'Google Drive yedekleri taranıyor...' : 'Drive klasöründe henüz bulut yedeği bulunmuyor. Yukarıdaki "Şimdi Drive\'a Yedekle" butonu ile ilk yedeği alabilirsiniz.' }}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div v-else class="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-yellow-800 text-sm">
+                            <div class="font-bold flex items-center gap-2 mb-1">
+                                <i class="fa-solid fa-circle-info"></i> Yerel Moddasınız
+                            </div>
+                            <p class="text-xs text-yellow-700">Bulut yedekleme ve Drive üzerinden otomatik eşitleme için Google Apps Script web uygulaması üzerinden giriş yapmalısınız. Yerel modda 'Yerel JSON İndir' ve 'JSON Dosyası Yükle' butonlarıyla yedekleme yapabilirsiniz.</p>
+                        </div>
+                    </div>
                 </div>
             </main>
         </div>
@@ -282,6 +440,14 @@
                         <!-- Cihaz Bilgileri -->
                         <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
                             <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">Cihaz Bilgileri</h4>
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    <i class="fa-regular fa-calendar-days text-blue-500 mr-1"></i>
+                                    Kayıt / İşlem Tarihi ve Saati <span class="text-red-500">*</span>
+                                </label>
+                                <input type="datetime-local" v-model="form.created_at_str" required class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-medium bg-white">
+                                <p class="text-[11px] text-gray-500 mt-1">Varsayılan olarak anlık tarih/saat seçilidir; dilerseniz geriye veya ileriye dönük değiştirebilirsiniz.</p>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Marka <span class="text-red-500">*</span></label>
@@ -362,6 +528,42 @@
                     <button type="button" @click="closeModal" class="px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition font-medium">İptal</button>
                     <button type="submit" form="deviceForm" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium shadow-sm flex items-center">
                         <i class="fa-solid fa-save mr-2"></i> Kaydet
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Restore Confirmation Modal -->
+        <div v-if="restoreModalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-[75]" @click.self="restoreModalOpen = false">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div class="p-5 border-b flex items-center justify-between" :class="restoreMode === 'replace' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'">
+                    <h3 class="font-bold text-base flex items-center gap-2">
+                        <i :class="restoreMode === 'replace' ? 'fa-solid fa-triangle-exclamation text-red-600' : 'fa-solid fa-code-merge text-blue-600'"></i>
+                        {{ restoreMode === 'replace' ? 'Sıfırdan Değiştirerek Geri Yükle' : 'Akıllı Eşleştirme ile Geri Yükle' }}
+                    </h3>
+                    <button @click="restoreModalOpen = false" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+                </div>
+                <div class="p-6 space-y-4 text-sm text-gray-700">
+                    <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        <div class="text-xs text-gray-500 mb-0.5">Seçilen Yedek Dosyası</div>
+                        <div class="font-mono font-bold text-gray-900 break-all">{{ selectedBackup && selectedBackup.name }}</div>
+                        <div class="text-xs text-gray-500 mt-1 flex items-center justify-between">
+                            <span>Tarih: {{ selectedBackup && (selectedBackup.updatedStr || formatDate(selectedBackup.updated)) }}</span>
+                            <span v-if="selectedBackup && selectedBackup.count !== null" class="font-semibold text-blue-600">{{ selectedBackup.count }} Cihaz</span>
+                        </div>
+                    </div>
+                    <div v-if="restoreMode === 'replace'" class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs leading-relaxed">
+                        ⚠️ <strong>DİKKAT:</strong> Bu işlem mevcut tüm cihaz kayıtlarını sıfırlayacak ve yalnızca seçilen yedek dosyasındaki kayıtları veritabanına yazacaktır. Bu işlem geri alınamaz!
+                    </div>
+                    <div v-else class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-xs leading-relaxed">
+                        ℹ️ <strong>Akıllı Eşleştirme:</strong> Mevcut kayıtlarınız silinmez. Aynı ID'ye sahip cihazlar güncellenir, yedekte olup sizde olmayan cihazlar listenize eklenir.
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-50 border-t flex justify-end gap-3">
+                    <button @click="restoreModalOpen = false" :disabled="restoring" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition font-medium text-xs">Vazgeç</button>
+                    <button @click="confirmRestore" :disabled="restoring" :class="restoreMode === 'replace' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'" class="px-5 py-2 text-white rounded-lg font-medium text-xs transition flex items-center gap-2 disabled:opacity-50">
+                        <i v-if="restoring" class="fa-solid fa-circle-notch fa-spin"></i>
+                        <span>{{ restoring ? 'Geri Yükleniyor...' : 'Evet, Geri Yükle' }}</span>
                     </button>
                 </div>
             </div>
@@ -457,17 +659,42 @@
             available() {
                 return typeof google !== 'undefined' && google.script && google.script.run;
             },
-            call(name, args) {
+            call(name, args, timeoutMs = 25000) {
                 return new Promise((resolve, reject) => {
                     if (!this.available()) {
                         reject(new Error('NO_BACKEND'));
                         return;
                     }
+                    let done = false;
+                    const timer = setTimeout(() => {
+                        if (!done) {
+                            done = true;
+                            reject(new Error('ZAMAN_ASIMI: Google sunucusundan 25 saniye içinde yanıt alınamadı. Lütfen internet bağlantınızı kontrol edin.'));
+                        }
+                    }, timeoutMs);
                     try {
-                        const runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+                        const runner = google.script.run
+                            .withSuccessHandler((res) => {
+                                if (!done) {
+                                    done = true;
+                                    clearTimeout(timer);
+                                    resolve(res);
+                                }
+                            })
+                            .withFailureHandler((err) => {
+                                if (!done) {
+                                    done = true;
+                                    clearTimeout(timer);
+                                    reject(err);
+                                }
+                            });
                         runner[name].apply(runner, args || []);
                     } catch (e) {
-                        reject(e);
+                        if (!done) {
+                            done = true;
+                            clearTimeout(timer);
+                            reject(e);
+                        }
                     }
                 });
             }
@@ -479,6 +706,9 @@
                     currentTab: 'dashboard',
                     devices: [],
                     searchQuery: '',
+                    dateFilterStart: '',
+                    dateFilterEnd: '',
+                    dateFilterQuick: 'ALL',
                     isModalOpen: false,
                     editingDevice: null,
                     form: this.getEmptyForm(),
@@ -501,7 +731,14 @@
                     newPin: '',
                     newPin2: '',
                     pinMsg: '',
-                    pinMsgOk: false
+                    pinMsgOk: false,
+                    cloudBackups: [],
+                    loadingBackups: false,
+                    backupRunning: false,
+                    restoreModalOpen: false,
+                    selectedBackup: null,
+                    restoreMode: 'merge',
+                    restoring: false
                 }
             },
             computed: {
@@ -509,7 +746,8 @@
                     return {
                         'dashboard': 'Gösterge Paneli',
                         'repairs': 'Tamir Takip',
-                        'sales': 'Alım & Satım'
+                        'sales': 'Alım & Satım',
+                        'backups': 'Yedekleme & Bulut Merkezi'
                     }[this.currentTab]
                 },
                 repairs() {
@@ -522,23 +760,33 @@
                     return [...this.devices].sort((a,b) => b.created_at - a.created_at).slice(0, 5);
                 },
                 filteredRepairs() {
-                    const q = this.searchQuery.toLowerCase();
-                    return this.repairs.filter(d => 
-                        (d.brand && d.brand.toLowerCase().includes(q)) || 
-                        (d.model && d.model.toLowerCase().includes(q)) ||
-                        (d.imei && d.imei.toLowerCase().includes(q)) ||
-                        (d.customer_name && d.customer_name.toLowerCase().includes(q)) ||
-                        (d.serial_number && d.serial_number.toLowerCase().includes(q))
-                    );
+                    const q = this.trLower(this.searchQuery);
+                    return this.repairs.filter(d => {
+                        if (!this.matchesDate(d)) return false;
+                        if (!q) return true;
+                        return (
+                            this.trLower(d.brand).includes(q) || 
+                            this.trLower(d.model).includes(q) ||
+                            this.trLower(d.imei).includes(q) ||
+                            this.trLower(d.customer_name).includes(q) ||
+                            this.trLower(d.customer_phone).includes(q) ||
+                            this.trLower(d.serial_number).includes(q)
+                        );
+                    });
                 },
                 filteredSales() {
-                    const q = this.searchQuery.toLowerCase();
-                    return this.sales.filter(d => 
-                        (d.brand && d.brand.toLowerCase().includes(q)) || 
-                        (d.model && d.model.toLowerCase().includes(q)) ||
-                        (d.imei && d.imei.toLowerCase().includes(q)) ||
-                        (d.serial_number && d.serial_number.toLowerCase().includes(q))
-                    );
+                    const q = this.trLower(this.searchQuery);
+                    return this.sales.filter(d => {
+                        if (!this.matchesDate(d)) return false;
+                        if (!q) return true;
+                        return (
+                            this.trLower(d.brand).includes(q) || 
+                            this.trLower(d.model).includes(q) ||
+                            this.trLower(d.imei).includes(q) ||
+                            this.trLower(d.serial_number).includes(q) ||
+                            this.trLower(d.notes).includes(q)
+                        );
+                    });
                 },
                 activeRepairs() {
                     return this.repairs.filter(d => ['PENDING', 'IN_PROGRESS'].includes(d.status)).length;
@@ -598,6 +846,78 @@
                 window.removeEventListener('online', this.onOnline);
             },
             methods: {
+                trLower(str) {
+                    return str ? String(str).toLocaleLowerCase('tr-TR').trim() : '';
+                },
+                matchesDate(device) {
+                    if (!this.dateFilterStart && !this.dateFilterEnd) return true;
+                    const d = new Date(device.created_at);
+                    if (this.dateFilterStart) {
+                        const start = new Date(this.dateFilterStart + 'T00:00:00');
+                        if (d < start) return false;
+                    }
+                    if (this.dateFilterEnd) {
+                        const end = new Date(this.dateFilterEnd + 'T23:59:59');
+                        if (d > end) return false;
+                    }
+                    return true;
+                },
+                setQuickDate(type) {
+                    this.dateFilterQuick = type;
+                    const now = new Date();
+                    const fmt = d => {
+                        const y = d.getFullYear();
+                        const m = String(d.getMonth() + 1).padStart(2, '0');
+                        const day = String(d.getDate()).padStart(2, '0');
+                        return `${y}-${m}-${day}`;
+                    };
+                    if (type === 'TODAY') {
+                        const s = fmt(now);
+                        this.dateFilterStart = s;
+                        this.dateFilterEnd = s;
+                    } else if (type === 'WEEK') {
+                        const dayOfWeek = now.getDay() || 7;
+                        const monday = new Date(now);
+                        monday.setDate(now.getDate() - (dayOfWeek - 1));
+                        this.dateFilterStart = fmt(monday);
+                        this.dateFilterEnd = fmt(now);
+                    } else if (type === 'MONTH') {
+                        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+                        this.dateFilterStart = fmt(first);
+                        this.dateFilterEnd = fmt(now);
+                    } else {
+                        this.dateFilterStart = '';
+                        this.dateFilterEnd = '';
+                    }
+                },
+                formatBytes(bytes) {
+                    if (!bytes || bytes === 0) return '0 B';
+                    const k = 1024;
+                    const dm = 1;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+                },
+                exitApplication() {
+                    if (confirm('Kuzgun CRM programını kapatmak istiyor musunuz?')) {
+                        if (this.retryTimer) clearTimeout(this.retryTimer);
+                        this.showToast('Program kapatılıyor...', 'ok');
+                        try {
+                            window.open('', '_self', '');
+                            window.close();
+                        } catch (e) {}
+                        setTimeout(() => {
+                            document.body.innerHTML = `
+                                <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;background:#111827;color:#f3f4f6;text-align:center;padding:20px;">
+                                    <div style="font-size:54px;margin-bottom:16px;">🦅</div>
+                                    <h2 style="font-size:24px;font-weight:bold;margin-bottom:8px;">Kuzgun İletişim CRM Kapatıldı</h2>
+                                    <p style="color:#9ca3af;max-width:440px;font-size:14px;line-height:1.6;">Oturumunuz ve tüm verileriniz başarıyla kaydedildi. Tarayıcı sekmesini veya pencereyi güvenle kapatabilirsiniz.</p>
+                                    <button onclick="location.reload()" style="margin-top:24px;padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Tekrar Aç</button>
+                                </div>
+                            `;
+                        }, 250);
+                    }
+                },
                 demoDevices() {
                     return [
                         { id: 1, type: 'REPAIR', status: 'IN_PROGRESS', brand: 'Apple', model: 'iPhone 13', imei: '123456789012345', serial_number: '', customer_name: 'Ahmet Yılmaz', customer_phone: '0532 123 4567', operations_performed: 'Ekran değişimi yapılacak', notes: 'Şifre: 1453', price: 1500, created_at: Date.now() - 86400000, updated_at: Date.now() - 86400000 },
@@ -647,6 +967,7 @@
                         this.statusInfo = info;
                         try { localStorage.setItem(PIN_KEY, this.pinInput); } catch (e) {}
                         await this.pull();
+                        this.fetchDriveBackups();
                         return true;
                     } catch (e) {
                         const msg = String((e && e.message) || e || '');
@@ -758,12 +1079,48 @@
                     if (this.authed) this.pull();
                     else if (this.pinInput) this.connect(true);
                 },
-                async backupToDrive() {
+                async backupToDriveNow() {
+                    if (!this.isCloud || !this.authed) return;
+                    this.backupRunning = true;
                     try {
                         const res = await Gas.call('backupToDrive', [this.pinInput]);
-                        this.showToast('Drive yedeği: ' + res.file + ' (' + res.count + ' kayıt)', 'ok');
+                        this.showToast('Drive bulut yedeği oluşturuldu: ' + res.file + ' (' + res.count + ' kayıt)', 'ok');
+                        await this.fetchDriveBackups();
                     } catch (e) {
                         this.showToast('Drive yedekleme hatası: ' + String((e && e.message) || e), 'error');
+                    } finally {
+                        this.backupRunning = false;
+                    }
+                },
+                async fetchDriveBackups() {
+                    if (!this.isCloud || !this.authed) return;
+                    this.loadingBackups = true;
+                    try {
+                        const list = await Gas.call('listDriveBackups', [this.pinInput]);
+                        this.cloudBackups = Array.isArray(list) ? list : [];
+                    } catch (e) {
+                        // Sessiz yakala veya bilgi ver
+                    } finally {
+                        this.loadingBackups = false;
+                    }
+                },
+                openRestoreModal(backup, mode) {
+                    this.selectedBackup = backup;
+                    this.restoreMode = mode;
+                    this.restoreModalOpen = true;
+                },
+                async confirmRestore() {
+                    if (!this.selectedBackup) return;
+                    this.restoring = true;
+                    try {
+                        const res = await Gas.call('restoreFromDriveBackup', [this.pinInput, this.selectedBackup.id, this.restoreMode]);
+                        this.showToast('Yedek başarıyla geri yüklendi (' + (res.count || 0) + ' kayıt)', 'ok');
+                        this.restoreModalOpen = false;
+                        await this.pull();
+                    } catch (e) {
+                        this.showToast('Geri yükleme hatası: ' + String((e && e.message) || e), 'error');
+                    } finally {
+                        this.restoring = false;
                     }
                 },
                 openSettings() {
@@ -800,7 +1157,8 @@
                 async installBackup() {
                     try {
                         await Gas.call('setupDailyBackup', []);
-                        this.showToast('Günlük Drive yedeği kuruldu (03:00)', 'ok');
+                        if (this.statusInfo) this.statusInfo.dailyBackupActive = true;
+                        this.showToast('Günlük Drive yedeği kuruldu / aktifleştirildi (03:00)', 'ok');
                     } catch (e) {
                         this.showToast('Kurulum hatası: ' + String((e && e.message) || e), 'error');
                     }
@@ -815,7 +1173,7 @@
                     this.showToast('Çıkış yapıldı', 'ok');
                 },
                 exportBackup() {
-                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: 2, exported_at: new Date().toISOString(), devices: this.devices }, null, 2);
+                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), devices: this.devices }, null, 2);
                     const blob = new Blob([payload], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -885,6 +1243,9 @@
                     return new Date(ts).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
                 },
                 getEmptyForm(type = 'REPAIR') {
+                    const now = new Date();
+                    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                    const dateStr = now.toISOString().slice(0, 16);
                     return {
                         id: null,
                         type: type,
@@ -898,8 +1259,9 @@
                         notes: '',
                         operations_performed: '',
                         price: null,
-                        created_at: null
-                    }
+                        created_at: null,
+                        created_at_str: dateStr
+                    };
                 },
                 openModal(type) {
                     this.editingDevice = null;
@@ -911,23 +1273,36 @@
                 },
                 editDevice(device) {
                     this.editingDevice = device;
-                    this.form = { ...device };
+                    const d = new Date(device.created_at || Date.now());
+                    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+                    this.form = {
+                        ...device,
+                        created_at_str: d.toISOString().slice(0, 16)
+                    };
                     this.isModalOpen = true;
                 },
                 saveDevice() {
+                    let targetDate = Date.now();
+                    if (this.form.created_at_str) {
+                        const parsed = new Date(this.form.created_at_str).getTime();
+                        if (!isNaN(parsed) && parsed > 0) targetDate = parsed;
+                    }
                     let target;
                     if (this.editingDevice) {
                         const index = this.devices.findIndex(d => d.id === this.editingDevice.id);
                         this.form.updated_at = Date.now();
+                        this.form.created_at = targetDate;
                         target = { ...this.form };
+                        delete target.created_at_str;
                         if (index !== -1) this.devices.splice(index, 1, target);
                     } else {
                         target = {
                             ...this.form,
                             id: Date.now() + Math.floor(Math.random() * 1000),
-                            created_at: Date.now(),
+                            created_at: targetDate,
                             updated_at: Date.now()
                         };
+                        delete target.created_at_str;
                         this.devices.push(target);
                     }
                     this.cacheLocal();

@@ -218,10 +218,19 @@ function crmStatus(pin) {
   auth_(pin);
   var rows = readRows_();
   var ss = getSpreadsheet_();
+  var triggers = ScriptApp.getProjectTriggers();
+  var hasDaily = false;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'backupDaily') {
+      hasDaily = true;
+      break;
+    }
+  }
   return {
     count: rows.length,
     spreadsheet: ss.getName(),
     url: ss.getUrl(),
+    dailyBackupActive: hasDaily,
     updated: rows.reduce(function (m, r) {
       return Math.max(m, Number(r.updated_at) || 0);
     }, 0)
@@ -240,14 +249,14 @@ function changePin(pin, newPin) {
 
 function backupToDrive(pin) {
   auth_(pin);
-  return runBackup_();
+  return runBackup_(true);
 }
 
 function backupDaily() {
-  return runBackup_();
+  return runBackup_(false);
 }
 
-function runBackup_() {
+function runBackup_(instant) {
   var rows = readRows_();
   var data = rows.map(function (r) {
     delete r._row;
@@ -264,33 +273,120 @@ function runBackup_() {
     }
   }
   if (!folder) {
-    folder = DriveApp.createFolder('Kuzgun CRM Yedekleri');
-    props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+    var it = DriveApp.getFoldersByName('Kuzgun CRM Yedekleri');
+    if (it.hasNext()) {
+      folder = it.next();
+      props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+    } else {
+      folder = DriveApp.createFolder('Kuzgun CRM Yedekleri');
+      props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+    }
   }
   var day = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
-  var name = 'kuzgun-crm-' + day + '.json';
-  var json = JSON.stringify({ exported_at: new Date().toISOString(), count: data.length, devices: data }, null, 2);
-  var existing = folder.getFilesByName(name);
-  if (existing.hasNext()) {
-    existing.next().setContent(json);
-  } else {
-    folder.createFile(name, json);
-  }
+  var ts = Utilities.formatDate(new Date(), TZ, 'HHmmss');
+  var name = instant ? ('kuzgun-crm-' + day + '-' + ts + '.json') : ('kuzgun-crm-' + day + '.json');
+  var json = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), count: data.length, devices: data }, null, 2);
+  
+  var created = folder.createFile(name, json);
+  
   var files = folder.getFiles();
   var olds = [];
   while (files.hasNext()) {
     var f = files.next();
-    if (/^kuzgun-crm-\d{4}-\d{2}-\d{2}\.json$/.test(f.getName())) {
+    if (/^kuzgun-crm-.*\.json$/.test(f.getName())) {
       olds.push(f);
     }
   }
   olds.sort(function (a, b) {
-    return a.getName() < b.getName() ? -1 : 1;
+    return a.getLastUpdated().getTime() - b.getLastUpdated().getTime();
   });
-  for (var i = 0; i < olds.length - 30; i++) {
+  for (var i = 0; i < olds.length - 40; i++) {
     olds[i].setTrashed(true);
   }
-  return { status: 'ok', file: name, count: data.length, folder: folder.getName() };
+  return { status: 'ok', file: name, fileId: created.getId(), count: data.length, folder: folder.getName() };
+}
+
+function listDriveBackups(pin) {
+  auth_(pin);
+  var props = PropertiesService.getScriptProperties();
+  var folder = null;
+  var folderId = props.getProperty('BACKUP_FOLDER_ID');
+  if (folderId) {
+    try { folder = DriveApp.getFolderById(folderId); } catch (e) { folder = null; }
+  }
+  if (!folder) {
+    var it = DriveApp.getFoldersByName('Kuzgun CRM Yedekleri');
+    if (it.hasNext()) {
+      folder = it.next();
+      props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+    }
+  }
+  if (!folder) return [];
+  var files = folder.getFiles();
+  var out = [];
+  while (files.hasNext()) {
+    var f = files.next();
+    var name = f.getName();
+    if (/^kuzgun-crm-.*\.json$/.test(name)) {
+      var size = f.getSize();
+      var updated = f.getLastUpdated();
+      var count = null;
+      try {
+        var content = f.getBlob().getDataAsString();
+        var parsed = JSON.parse(content);
+        if (parsed && typeof parsed.count === 'number') count = parsed.count;
+        else if (parsed && Array.isArray(parsed.devices)) count = parsed.devices.length;
+      } catch (err) {}
+      out.push({
+        id: f.getId(),
+        name: name,
+        size: size,
+        updated: updated.getTime(),
+        updatedStr: Utilities.formatDate(updated, TZ, 'yyyy-MM-dd HH:mm:ss'),
+        count: count
+      });
+    }
+  }
+  out.sort(function (a, b) { return b.updated - a.updated; });
+  return out;
+}
+
+function restoreFromDriveBackup(pin, fileId, mode) {
+  auth_(pin);
+  var file = DriveApp.getFileById(fileId);
+  var content = file.getBlob().getDataAsString();
+  var parsed = JSON.parse(content);
+  var incoming = Array.isArray(parsed) ? parsed : (parsed.devices || []);
+  if (!Array.isArray(incoming)) {
+    throw new Error('GECERSIZ_YEDEK_FORMATI');
+  }
+  if (mode === 'replace') {
+    var lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+      var sh = getSheet_();
+      var last = sh.getLastRow();
+      if (last > 1) {
+        sh.deleteRows(2, last - 1);
+      }
+      var appends = [];
+      for (var i = 0; i < incoming.length; i++) {
+        var d = incoming[i];
+        if (!d || d.id === undefined || d.id === null) continue;
+        appends.push(toRow_(d));
+      }
+      if (appends.length) {
+        sh.getRange(2, 1, appends.length, COLUMNS.length).setValues(appends);
+      }
+      return { status: 'ok', mode: 'replace', count: appends.length, name: file.getName() };
+    } finally {
+      lock.releaseLock();
+    }
+  } else {
+    // mode === 'merge'
+    var res = importDevices(pin, incoming);
+    return { status: 'ok', mode: 'merge', count: incoming.length, imported: res.imported, updated: res.updated, added: res.added, name: file.getName() };
+  }
 }
 
 function setupDailyBackup() {

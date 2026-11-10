@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -7,11 +7,11 @@ using System.Resources;
 using System.Text;
 
 [assembly: AssemblyTitle("Kuzgun Iletisim CRM Kurulum")]
-[assembly: AssemblyDescription("Tek tikla kurulum sihirbazi - Kuzgun Iletisim CRM")]
+[assembly: AssemblyDescription("Tek tikla kurulum ve yonetim sihirbazi - Kuzgun Iletisim CRM v2.1")]
 [assembly: AssemblyProduct("Kuzgun Iletisim CRM")]
 [assembly: AssemblyCompany("Kuzgun Iletisim")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("2.1.0.0")]
+[assembly: AssemblyFileVersion("2.1.0.0")]
 [assembly: NeutralResourcesLanguage("tr-TR")]
 
 namespace KuzgunCrmSetup
@@ -23,6 +23,8 @@ namespace KuzgunCrmSetup
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool SetConsoleCP(uint wCodePageID);
+
+        private static Process _childProcess = null;
 
         private static readonly string[] Payload = new string[]
         {
@@ -37,6 +39,20 @@ namespace KuzgunCrmSetup
         {
             try
             {
+                Console.CancelKeyPress += delegate(object sender, ConsoleCancelEventArgs e)
+                {
+                    e.Cancel = true;
+                    try
+                    {
+                        if (_childProcess != null && !_childProcess.HasExited)
+                        {
+                            _childProcess.Kill();
+                        }
+                    }
+                    catch {}
+                    Environment.Exit(0);
+                };
+
                 SetConsoleCP(65001);
                 SetConsoleOutputCP(65001);
 
@@ -73,6 +89,7 @@ namespace KuzgunCrmSetup
                 using (Process p = Process.Start(psi))
                 {
                     if (p == null) throw new InvalidOperationException("PowerShell sureci baslatilamadi");
+                    _childProcess = p;
                     p.WaitForExit();
                     return p.ExitCode;
                 }

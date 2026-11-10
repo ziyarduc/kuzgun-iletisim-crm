@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [switch]$Bilgi,
@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $Kaynak = $PSScriptRoot
 $Ana = Join-Path $env:LOCALAPPDATA 'KuzgunCRM'
 $Proje = Join-Path $Ana 'proje'
-$Surdur = 'v1.2.0'
+$Surdur = 'v2.1.0'
 function ConfigYol { return (Join-Path $Ana 'kurulum.json') }
 
 function Satir { param($renk, $metin) Write-Host $metin -ForegroundColor $renk }
@@ -32,8 +32,12 @@ function Adim { param($t)
     Write-Host ('-- ' + $script:AdimNo + ') ' + $t) -ForegroundColor Magenta
 }
 function Devam { param($varsayilan = '')
-    if ($varsayilan -ne '') { $cevap = Read-Host ("  Enter = devam (" + $varsayilan + ")") }
-    else { $cevap = Read-Host '  Enter ile devam edin' }
+    if ($varsayilan -ne '') { $cevap = Read-Host ("  Enter = devam (" + $varsayilan + ")  [C] Cikis") }
+    else { $cevap = Read-Host '  Enter ile devam edin  [C] Cikis' }
+    if ($cevap -match '^[CcçÇ]$') {
+        Write-Host '  Islem iptal edildi. Cikiliyor...' -ForegroundColor Yellow
+        exit 0
+    }
     return $cevap
 }
 function BaglantiVarMi {
@@ -267,6 +271,9 @@ function Asama4_Tamam {
         Satir Gray ('  Kurulum logu: ' + $log)
     }
     Start-Process $sonuc.url
+    Write-Host ''
+    Satir Green '  Kurulum basariyla tamamlandi.'
+    $null = Read-Host '  Pencereyi kapatmak icin Enter tusuna basin'
 }
 
 function KisayolOlustur {
@@ -418,7 +425,11 @@ try {
     if ($mevcut -and $mevcut.url) {
         Baslik 'ONCEKI KURULUM BULUNDU'
         Satir White ('    ADRES : ' + $mevcut.url)
-        $cevap = Read-Host '  [G] Guncelle (Enter)  [Y] Yeni kurulum (sifirdan)'
+        $cevap = Read-Host '  [G] Guncelle (Enter)  [Y] Yeni kurulum (sifirdan)  [C] Cikis'
+        if ($cevap -match '^[CcçÇ]$') {
+            Write-Host '  Cikiliyor...' -ForegroundColor Yellow
+            exit 0
+        }
         if ($cevap -ne 'Y') {
             GuncellemeYap $mevcut
             exit 0
@@ -430,7 +441,8 @@ try {
         Uyari '  Node.js kurulu degil (otomatik kurulumun motoru).'
         Uyari '  Tarayici aciliyor: indirin, kurun, sonra Enter''a basin.'
         Start-Process 'https://nodejs.org/'
-        $null = Read-Host '  Kurduysaniz Enter'
+        $cevapNode = Read-Host '  Kurduysaniz Enter  [C] Cikis'
+        if ($cevapNode -match '^[CcçÇ]$') { exit 0 }
         if (-not (KomutVarMi 'node')) {
             Hata '  Node.js hala gorunmuyor. Manuel kilavuza geciliyor.'
             Write-Host ''
@@ -439,11 +451,13 @@ try {
         }
     }
 
-    $cevap = Read-Host '  Kurulum modu  [O] Otomatik (Enter)  [M] Manuel kilavuz'
+    $cevap = Read-Host '  Kurulum modu  [O] Otomatik (Enter)  [M] Manuel kilavuz  [C] Cikis'
+    if ($cevap -match '^[CcçÇ]$') { exit 0 }
     if ($cevap -eq 'M') { ManuelRehber; exit 0 }
 
     $erisim = 'ANYONE'
-    $cevap2 = Read-Host '  Erisim izni  [A] Google girisi zorunlu (Enter, onerilen)  [B] girissiz herkes acabilsin'
+    $cevap2 = Read-Host '  Erisim izni  [A] Google girisi zorunlu (Enter, onerilen)  [B] girissiz herkes acabilsin  [C] Cikis'
+    if ($cevap2 -match '^[CcçÇ]$') { exit 0 }
     if ($cevap2 -eq 'B') { $erisim = 'ANYONE_ANONYMOUS' }
 
     DosyalariHazirla -erisim $erisim
@@ -469,5 +483,7 @@ catch {
         Set-Content -Path $log -Value $script:ClaspLog -Encoding UTF8
         Satir Gray ('  Ayrinti: ' + $log)
     }
+    Write-Host ''
+    $null = Read-Host '  Kapatmak icin Enter tusuna basin'
     exit 1
 }
