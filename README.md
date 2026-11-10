@@ -129,3 +129,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File exe\Uret-Exe.ps1
 Derleme `.NET Framework`'ün `csc.exe`'siyle yapılır (her Windows'ta vardır; ek yük gerekmez), ikon programla üretilir ve betik sonunda EXE'yi kendi `-Test`'inden geçirir. Çıktı: `KuzgunCRM_Kurulum.exe` (yaklaşık 100 KB, tüm dosyalar gömülü). `-TestiAtla` doğrulamayı atlar.
 
 EXE çalıştığında gömülü dosyaları `%LOCALAPPDATA%\KuzgunCRM\kaynak\` altına açar ve `Kurulum.ps1`'i Windows PowerShell ile başlatır; EXE'ye verilen tüm mod argümanları sihirbaza aynen iletilir, konsol UTF-8'e (`chcp 65001`) ayarlanır. Bu nedenle `Program.cs`/`Uret-Exe.ps1` değişikliklerinde EXE'yi yeniden üretmeyi unutmayın — sihirbaz kodu EXE'nin içindedir.
+
+## Masaüstü kısayolu ve dosyadan açılış (v2.1.1)
+- Kurulum, masaüstüne **Kuzgun CRM.lnk** (adresi gömülü yerel kopya) ve **Kuzgun CRM (Bulut).url** kısayollarını ekler; OneDrive masaüstünü de dener. Eski sürümün masaüstü/başlangıç dosyaları `%LOCALAPPDATA%\KuzgunCRM\eski_masaustu_*` klasörüne yedeklenip kaldırılır, eski 127.0.0.1 yerel sunucusu durdurulur.
+- HTML dosyası Apps Script dışında (çift tıklayarak) açılırsa **Bulut Bağlantı Sihirbazı** çıkar: `…/exec` adresi girilince varsayılan PIN ile Google hesabı otomatik eşlenir ve yedekleme/geri yükleme çalışır (`Code.gs` içindeki `doPost` JSON API'si üzerinden).
+- Testler: `node tests/e2e_file_mode.js`

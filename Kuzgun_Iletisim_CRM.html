@@ -75,6 +75,7 @@
                     </template>
                     <template v-else>
                         <div class="mb-1 text-yellow-400"><i class="fa-solid fa-hard-drive mr-1"></i> Yerel mod (bu cihaz)</div>
+                        <a href="#" @click.prevent="openSetup" class="block mb-1 text-blue-300 underline hover:text-blue-200">Buluta bağlan</a>
                     </template>
                     Kuzgun İletişim Yönetim Sistemi<br>v2.1.0
                 </div>
@@ -487,6 +488,7 @@
                                 <i class="fa-solid fa-circle-info"></i> Yerel Moddasınız
                             </div>
                             <p class="text-xs text-yellow-700">Bulut yedekleme ve Drive üzerinden otomatik eşitleme için Google Apps Script web uygulaması üzerinden giriş yapmalısınız. Yerel modda 'Yerel JSON İndir' ve 'JSON Dosyası Yükle' butonlarıyla yedekleme yapabilirsiniz.</p>
+                            <button @click="openSetup" class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>Google Hesabına / Buluta Bağlan</button>
                         </div>
                     </div>
                 </div>
@@ -666,6 +668,36 @@
             </div>
         </div>
 
+        <!-- İlk Açılış / Bulut Bağlantı Sihirbazı (dosyadan açıldığında) -->
+        <div v-if="showSetup" class="fixed inset-0 bg-gray-900 bg-opacity-95 backdrop-blur-sm flex items-center justify-center p-4 z-[70]">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-full overflow-y-auto">
+                <div class="bg-gray-900 text-white p-6 text-center">
+                    <div class="text-4xl mb-2">🦅</div>
+                    <h3 class="text-xl font-bold">Hoş geldiniz — Bulut Bağlantısı</h3>
+                    <p class="text-gray-400 text-sm mt-1">Bu dosya şu an buluta bağlı değil (yerel mod).</p>
+                </div>
+                <div class="p-6 space-y-4 text-sm text-gray-700">
+                    <ol class="list-decimal ml-5 space-y-1 text-xs text-gray-600">
+                        <li><b>KuzgunCRM_Kurulum.exe</b> dosyasına çift tıklayın (kurulum, güncelleme ve Google hesabı eşleme otomatik yapılır).</li>
+                        <li>Kurulum bitince masaüstündeki <b>Kuzgun CRM</b> kısayolu bağlı olarak açılır.</li>
+                        <li>Elle bağlamak isterseniz web adresini (…/exec) aşağı yapıştırın; varsayılan PIN ile Google hesabınız otomatik eşlenir.</li>
+                    </ol>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Web uygulaması adresi</label>
+                        <div class="flex gap-2">
+                            <input type="url" v-model="setupUrl" @keyup.enter="saveSetup" placeholder="https://script.google.com/macros/s/.../exec" class="flex-1 p-2.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                            <button type="button" @click="pasteSetupUrl" class="px-3 border border-gray-300 rounded-lg text-xs hover:bg-gray-100" title="Panodan yapıştır"><i class="fa-solid fa-paste"></i></button>
+                        </div>
+                        <p v-if="setupError" class="text-red-600 text-xs mt-2"><i class="fa-solid fa-circle-exclamation mr-1"></i>{{ setupError }}</p>
+                    </div>
+                    <button @click="saveSetup" :disabled="setupBusy" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition font-semibold disabled:opacity-60">
+                        <i class="fa-solid mr-2" :class="setupBusy ? 'fa-circle-notch fa-spin' : 'fa-link'"></i>{{ setupBusy ? 'Bağlanılıyor...' : 'Bağlan ve Google Hesabını Eşle' }}
+                    </button>
+                    <button @click="skipSetup" class="w-full bg-gray-100 text-gray-600 p-2.5 rounded-lg hover:bg-gray-200 transition text-xs">Şimdilik yerel modda devam et</button>
+                </div>
+            </div>
+        </div>
+
         <!-- PIN Login (cloud mode only) -->
         <div v-if="isCloud && !authed && showLogin" class="fixed inset-0 bg-gray-900 bg-opacity-95 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
@@ -763,16 +795,68 @@
             } catch (e) {}
         }
 
+        const CLOUD_URL_KEY = 'kuzgun_crm_url';
+        // Kurulum sihirbazi masaustune kopyaladigi dosyada tirnaklarin icine web adresini yazar.
+        const EMBED_URL = '';
+
+        function isExecUrl(u) {
+            return /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[\w-]+\/exec\/?$/.test(String(u || '').trim());
+        }
+
         const Gas = {
-            available() {
+            inScript() {
                 return typeof google !== 'undefined' && google.script && google.script.run;
             },
-            call(name, args, timeoutMs = 25000) {
-                return new Promise((resolve, reject) => {
-                    if (!this.available()) {
-                        reject(new Error('NO_BACKEND'));
-                        return;
+            url() {
+                let u = '';
+                try {
+                    const q = new URLSearchParams(location.search).get('u');
+                    if (q && isExecUrl(q)) { localStorage.setItem(CLOUD_URL_KEY, q); }
+                } catch (e) {}
+                try { u = localStorage.getItem(CLOUD_URL_KEY) || ''; } catch (e) {}
+                if (!u && isExecUrl(EMBED_URL)) u = EMBED_URL;
+                return isExecUrl(u) ? u.trim() : '';
+            },
+            setUrl(u) {
+                try { if (u) localStorage.setItem(CLOUD_URL_KEY, u.trim()); else localStorage.removeItem(CLOUD_URL_KEY); } catch (e) {}
+            },
+            available() {
+                return !!(this.inScript() || this.url());
+            },
+            async http(name, args, timeoutMs) {
+                const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
+                try {
+                    const res = await fetch(this.url(), {
+                        method: 'POST',
+                        redirect: 'follow',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ fn: name, args: args || [] }),
+                        signal: ctl ? ctl.signal : undefined
+                    });
+                    const txt = await res.text();
+                    let data;
+                    try { data = JSON.parse(txt); } catch (e) {
+                        throw new Error('BAGLANTI: Sunucu beklenen yanıtı vermedi. Web uygulaması "Herkes" erişimiyle yayınlanmış ve güncel sürüm olmalı (Kurulum.exe\'yi tekrar çalıştırın).');
                     }
+                    if (!data.ok) throw new Error(data.error || 'Bilinmeyen sunucu hatası');
+                    return data.result;
+                } catch (e) {
+                    if (e && e.name === 'AbortError') {
+                        throw new Error('ZAMAN_ASIMI: Google sunucusundan ' + Math.round(timeoutMs / 1000) + ' saniye içinde yanıt alınamadı. Lütfen internet bağlantınızı kontrol edin.');
+                    }
+                    if (e instanceof TypeError) throw new Error('BAGLANTI: Google sunucusuna ulaşılamadı (internet veya adres hatalı).');
+                    throw e;
+                } finally {
+                    if (timer) clearTimeout(timer);
+                }
+            },
+            call(name, args, timeoutMs = 25000) {
+                if (!this.inScript()) {
+                    if (!this.url()) return Promise.reject(new Error('NO_BACKEND'));
+                    return this.http(name, args, timeoutMs);
+                }
+                return new Promise((resolve, reject) => {
                     let done = false;
                     const timer = setTimeout(() => {
                         if (!done) {
@@ -858,6 +942,10 @@
                     isCloud: false,
                     authed: false,
                     showLogin: false,
+                    showSetup: false,
+                    setupUrl: '',
+                    setupError: '',
+                    setupBusy: false,
                     pinInput: '',
                     pinError: '',
                     syncState: 'init',
@@ -1015,6 +1103,9 @@
                 } else {
                     this.loadLocal();
                     this.syncState = 'local';
+                    let skip = false;
+                    try { skip = !!sessionStorage.getItem('kuzgun_setup_skip'); } catch (e) {}
+                    if (!skip) this.openSetup();
                 }
                 window.addEventListener('focus', this.onWindowFocus);
                 window.addEventListener('online', this.onOnline);
@@ -1269,6 +1360,61 @@
                     }
                     return await this.connect();
                 },
+                openSetup() {
+                    this.setupUrl = Gas.url() || '';
+                    this.setupError = '';
+                    this.showSetup = true;
+                },
+                async pasteSetupUrl() {
+                    try {
+                        const t = ((await navigator.clipboard.readText()) || '').trim();
+                        if (t) this.setupUrl = t;
+                    } catch (e) {
+                        this.setupError = 'Panoya erişilemedi; adresi elle yapıştırın (Ctrl+V).';
+                    }
+                },
+                skipSetup() {
+                    this.showSetup = false;
+                    try { sessionStorage.setItem('kuzgun_setup_skip', '1'); } catch (e) {}
+                },
+                async saveSetup() {
+                    const u = (this.setupUrl || '').trim();
+                    if (!isExecUrl(u)) {
+                        this.setupError = 'Adres https://script.google.com/macros/s/.../exec biçiminde olmalı.';
+                        return;
+                    }
+                    this.setupBusy = true;
+                    this.setupError = '';
+                    const eski = Gas.url();
+                    Gas.setUrl(u);
+                    try {
+                        const info = await Gas.call('crmStatus', ['kuzgun2024'], 30000);
+                        this.pinInput = 'kuzgun2024';
+                        this.isCloud = true;
+                        this.authed = true;
+                        this.showLogin = false;
+                        this.showSetup = false;
+                        this.statusInfo = info;
+                        try { localStorage.setItem(PIN_KEY, this.pinInput); } catch (e) {}
+                        this.showToast('Google hesabı bağlandı' + (info && info.accountEmail ? ': ' + info.accountEmail : ''), 'ok');
+                        await this.pull();
+                        this.fetchDriveBackups();
+                    } catch (e) {
+                        const msg = String((e && e.message) || e || '');
+                        if (msg.indexOf('PIN_HATALI') !== -1) {
+                            // Adres doğru, PIN değişmiş: giriş ekranına geç
+                            this.isCloud = true;
+                            this.showSetup = false;
+                            this.pinInput = '';
+                            this.showLogin = true;
+                        } else {
+                            Gas.setUrl(eski);
+                            this.setupError = msg.replace(/^(BAGLANTI|ZAMAN_ASIMI):\s*/, '');
+                        }
+                    } finally {
+                        this.setupBusy = false;
+                    }
+                },
                 offlineContinue() {
                     this.showLogin = false;
                     this.loadLocal();
@@ -1380,6 +1526,8 @@
                     if (m.indexOf('PIN_HATALI') !== -1) return 'PIN hatalı.';
                     if (m.indexOf('YEDEK_BULUNAMADI') !== -1) return 'Yedek dosyası bulunamadı (silinmiş olabilir).';
                     if (m.indexOf('GECERSIZ_YEDEK') !== -1) return 'Geçersiz yedek dosyası.';
+                    if (m.indexOf('NO_BACKEND') !== -1) return 'Bulut bağlantısı yok. Sol alttaki "Buluta bağlan" ile Google hesabınızı eşleyin.';
+                    if (m.indexOf('BILINMEYEN_ISLEM') !== -1) return 'Sunucu sürümü eski. KuzgunCRM_Kurulum.exe ile güncelleyin.';
                     return m;
                 },
                 async downloadDriveBackup(b) {

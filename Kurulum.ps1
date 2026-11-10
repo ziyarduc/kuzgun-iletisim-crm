@@ -460,7 +460,7 @@ function Asama4_Tamam {
     Satir White '    VARSAYILAN PIN: kuzgun2024  (Ilk giriste otomatik baglanir)'
     Write-Host ''
     Satir Gray '  - CRM simdi tarayicinizda otomatik aciliyor ve Google hesabinizla esleniyor.'
-    Satir Gray '  - Masaustune "Kuzgun CRM" kisayolu eklendi / guncellendi.'
+    Satir Gray '  - Masaustune "Kuzgun CRM" kisayolu eklendi / guncellendi (eski surum dosyalari yedeklenip kaldirildi).'
     Satir Gray '  - Tekrar guncellemek icin KuzgunCRM_Kurulum.exe dosyasina cift tiklamaniz yeterlidir.'
     Write-Host ''
     if ($script:ClaspLog) {
@@ -478,14 +478,84 @@ function Asama4_Tamam {
     }
 }
 
+function MasaustuKlasorleri {
+    $liste = New-Object System.Collections.ArrayList
+    foreach ($d in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:USERPROFILE 'Desktop'),
+                     $(if ($env:OneDrive) { Join-Path $env:OneDrive 'Desktop' }),
+                     $(if ($env:OneDriveConsumer) { Join-Path $env:OneDriveConsumer 'Desktop' }),
+                     $(if ($env:OneDriveCommercial) { Join-Path $env:OneDriveCommercial 'Desktop' }))) {
+        if ($d -and (Test-Path $d) -and -not $liste.Contains($d)) { [void]$liste.Add($d) }
+    }
+    return ,$liste
+}
+
+function EskiKurulumTemizle {
+    # Eski surumlerin masaustu dosyalari / 127.0.0.1 yerel sunucusu yeni surumu golgeliyor; yedekleyip kaldir
+    try {
+        $yedekKlasor = Join-Path $Ana ('eski_masaustu_' + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+        $tasindi = 0
+        foreach ($d in (MasaustuKlasorleri)) {
+            foreach ($f in (Get-ChildItem -Path $d -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)kuzgun' -and $_.Extension -match '(?i)^\.(html?|lnk|url|bat|cmd|vbs|py|ps1)$' })) {
+                if (-not (Test-Path $yedekKlasor)) { New-Item -ItemType Directory -Path $yedekKlasor -Force | Out-Null }
+                Move-Item -Path $f.FullName -Destination (Join-Path $yedekKlasor $f.Name) -Force -ErrorAction SilentlyContinue
+                $tasindi++
+            }
+        }
+        # Eski surumun baslangicta calisan kisayollari
+        $startup = [Environment]::GetFolderPath('Startup')
+        if ($startup -and (Test-Path $startup)) {
+            foreach ($f in (Get-ChildItem -Path $startup -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)kuzgun' })) {
+                if (-not (Test-Path $yedekKlasor)) { New-Item -ItemType Directory -Path $yedekKlasor -Force | Out-Null }
+                Move-Item -Path $f.FullName -Destination (Join-Path $yedekKlasor $f.Name) -Force -ErrorAction SilentlyContinue
+                $tasindi++
+            }
+        }
+        # Eski yerel (127.0.0.1) sunucu surecleri
+        $durdu = 0
+        foreach ($pr in (Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.ProcessId -ne $PID -and $_.Name -match '(?i)^(python|pythonw|node|php)\.exe$' -and
+                $_.CommandLine -match '(?i)kuzgun' -and $_.CommandLine -notmatch '(?i)clasp|npm' })) {
+            try { Stop-Process -Id $pr.ProcessId -Force -ErrorAction Stop; $durdu++ } catch {}
+        }
+        if ($tasindi -gt 0) { Basari ('  [OK] Eski masaustu dosyalari yedeklenip kaldirildi (' + $tasindi + ') -> ' + $yedekKlasor) }
+        if ($durdu -gt 0) { Basari ('  [OK] Eski yerel sunucu (127.0.0.1) durduruldu (' + $durdu + ')') }
+    } catch { Uyari ('  [!] Eski kurulum temizligi atlandi: ' + $_.Exception.Message) }
+}
+
 function KisayolOlustur {
     param([string]$url)
+    # 1) Web adresi gomulu yerel kopya (cift tiklayinca dogrudan buluta baglanir)
+    $html = Get-Content (Join-Path $Kaynak 'Kuzgun_Iletisim_CRM.html') -Raw -Encoding UTF8
+    if ($url) { $html = $html.Replace("const EMBED_URL = '';", "const EMBED_URL = '" + $url + "';") }
+    $yerelHtml = Join-Path $Ana 'Kuzgun_CRM.html'
+    if (-not (Test-Path $Ana)) { New-Item -ItemType Directory -Path $Ana -Force | Out-Null }
+    [System.IO.File]::WriteAllText($yerelHtml, $html, (New-Object System.Text.UTF8Encoding($false)))
+
+    $olustu = 0
+    foreach ($d in (MasaustuKlasorleri)) {
+        try {
+            # Ana kisayol: .lnk (yerel dosya, her zaman guncel adres gomulu) - ikon ile
+            $lnk = Join-Path $d 'Kuzgun CRM.lnk'
+            $ws = New-Object -ComObject WScript.Shell
+            $k = $ws.CreateShortcut($lnk)
+            $k.TargetPath = $yerelHtml
+            $k.WorkingDirectory = $Ana
+            $k.Description = 'Kuzgun Iletisim CRM ' + $Surdur
+            $k.IconLocation = 'shell32.dll,13'
+            $k.Save()
+            # Bulut adresini dogrudan acan ikinci kisayol
+            if ($url) { "[InternetShortcut]`r`nURL=$url" | Set-Content (Join-Path $d 'Kuzgun CRM (Bulut).url') -Encoding ASCII }
+            $olustu++
+            Basari ('  [OK] Masaustu kisayolu: ' + $lnk)
+        } catch { Uyari ('  [!] Kisayol olusturulamadi (' + $d + '): ' + $_.Exception.Message) }
+    }
+    # Baslat menusu
     try {
-        $masaustu = [Environment]::GetFolderPath('Desktop')
-        $sc = Join-Path $masaustu 'Kuzgun CRM.url'
-        "[InternetShortcut]`r`nURL=$url" | Set-Content $sc -Encoding ASCII
-        Basari ('  [OK] Masaustu kisayolu: ' + $sc)
-    } catch { Uyari ('  [!] Kisayol olusturulamadi: ' + $_.Exception.Message) }
+        $sm = Join-Path ([Environment]::GetFolderPath('Programs')) 'Kuzgun CRM.lnk'
+        $ws2 = New-Object -ComObject WScript.Shell
+        $k2 = $ws2.CreateShortcut($sm); $k2.TargetPath = $yerelHtml; $k2.WorkingDirectory = $Ana; $k2.IconLocation = 'shell32.dll,13'; $k2.Save()
+    } catch {}
+    if ($olustu -eq 0) { Uyari ('  [!] Masaustu kisayolu olusmadi. Dosyayi elle acabilirsiniz: ' + $yerelHtml) }
 }
 
 function OtomatikCalistir {
@@ -525,7 +595,10 @@ function OtomatikCalistir {
     $erisim = 'ANYONE'
     if ($onceki -and $onceki.Erisim) { $erisim = $onceki.Erisim }
 
+    EskiKurulumTemizle
     DosyalariHazirla -erisim $erisim
+    # Bulut adimi basarisiz olsa bile masaustu kisayolu olussun (adres varsa gomulur)
+    KisayolOlustur -url $(if ($onceki -and $onceki.Url) { $onceki.Url } else { '' })
     $sonuc = Asama_OtomatikKurulum -erisim $erisim -onceki $onceki
     ConfigYaz @{
         url = $sonuc.url

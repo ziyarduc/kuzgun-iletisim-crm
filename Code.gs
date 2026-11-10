@@ -9,6 +9,28 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
+// Masaustundeki HTML dosyasi (file://) ve baska istemciler icin JSON API.
+// Istek govdesi: {"fn":"crmStatus","args":["pin"]}  (Content-Type: text/plain)
+var API_FUNCS_ = {
+  crmStatus: 1, syncGoogleAccount: 1, listDevices: 1, upsertDevice: 1, deleteDevice: 1,
+  importDevices: 1, changePin: 1, backupToDrive: 1, listDriveBackups: 1, getDriveBackup: 1,
+  deleteDriveBackup: 1, restoreFromDriveBackup: 1, replaceAllDevices: 1
+};
+
+function doPost(e) {
+  var out;
+  try {
+    var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    var fn = String(body.fn || '');
+    if (!API_FUNCS_.hasOwnProperty(fn)) throw new Error('BILINMEYEN_ISLEM');
+    var f = this[fn];
+    out = { ok: true, result: f.apply(null, body.args || []) };
+  } catch (err) {
+    out = { ok: false, error: String((err && err.message) || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
 function auth_(pin) {
   var props = PropertiesService.getScriptProperties();
   var expected = props.getProperty('ACCESS_PIN');
