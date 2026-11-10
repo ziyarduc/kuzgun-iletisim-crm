@@ -218,6 +218,7 @@ function crmStatus(pin) {
   auth_(pin);
   var rows = readRows_();
   var ss = getSpreadsheet_();
+  var props = PropertiesService.getScriptProperties();
   var triggers = ScriptApp.getProjectTriggers();
   var hasDaily = false;
   for (var i = 0; i < triggers.length; i++) {
@@ -226,15 +227,38 @@ function crmStatus(pin) {
       break;
     }
   }
+  // İlk girişte günlük yedeklemeyi ve hesap eşleşmesini otomatik başlat
+  if (!hasDaily && !props.getProperty('AUTO_BACKUP_INIT')) {
+    try {
+      ScriptApp.newTrigger('backupDaily').timeBased().everyDays(1).atHour(3).create();
+      hasDaily = true;
+      props.setProperty('AUTO_BACKUP_INIT', '1');
+    } catch (e) {}
+  }
+  var ownerEmail = '';
+  var activeEmail = '';
+  try { ownerEmail = Session.getEffectiveUser().getEmail() || ''; } catch (e1) {}
+  try { activeEmail = Session.getActiveUser().getEmail() || ''; } catch (e2) {}
+  if (ownerEmail) {
+    try { props.setProperty('SYNCED_GOOGLE_ACCOUNT', ownerEmail); } catch (e3) {}
+  }
   return {
     count: rows.length,
     spreadsheet: ss.getName(),
+    spreadsheetId: ss.getId(),
     url: ss.getUrl(),
     dailyBackupActive: hasDaily,
+    accountEmail: ownerEmail || props.getProperty('SYNCED_GOOGLE_ACCOUNT') || '',
+    activeUserEmail: activeEmail || ownerEmail || '',
+    version: '2.1.0',
     updated: rows.reduce(function (m, r) {
       return Math.max(m, Number(r.updated_at) || 0);
     }, 0)
   };
+}
+
+function syncGoogleAccount(pin) {
+  return crmStatus(pin);
 }
 
 function changePin(pin, newPin) {

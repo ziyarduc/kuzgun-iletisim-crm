@@ -63,7 +63,10 @@
 
                 <div class="p-4 border-t border-gray-800 text-xs text-gray-500 text-center">
                     <template v-if="isCloud">
-                        <div class="mb-1 text-emerald-400"><i class="fa-solid fa-cloud mr-1"></i> Google Sheets bağlantılı</div>
+                        <div class="mb-1 text-emerald-400 font-medium"><i class="fa-solid fa-cloud mr-1"></i> Google Sheets Bağlantılı</div>
+                        <div v-if="statusInfo && statusInfo.accountEmail" class="mb-1 text-blue-400 truncate px-1" :title="'Eşleşen Google Hesabı: ' + statusInfo.accountEmail">
+                            <i class="fa-brands fa-google mr-1"></i>{{ statusInfo.accountEmail }}
+                        </div>
                         <div v-if="statusInfo" class="mb-1">
                             {{ devices.length }} kayıt ·
                             <a v-if="statusInfo.url" :href="statusInfo.url" target="_blank" rel="noopener" class="underline hover:text-emerald-300">{{ statusInfo.spreadsheet }}</a>
@@ -641,11 +644,21 @@
                     <button @click="settingsOpen = false" class="text-gray-400 hover:text-white text-xl leading-none" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="p-5 space-y-5 text-sm">
-                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div class="text-gray-500 mb-1">Veritabanı (Google Sheets)</div>
-                        <a v-if="statusInfo && statusInfo.url" :href="statusInfo.url" target="_blank" rel="noopener" class="text-blue-600 hover:underline break-all"><i class="fa-solid fa-table mr-1"></i>{{ statusInfo.spreadsheet }}</a>
-                        <div v-else class="text-gray-400">Bilgi alınamadı</div>
-                        <div class="text-gray-500 mt-1">{{ devices.length }} kayıt</div>
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-500">Eşleşen Google Hesabı</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold"><i class="fa-solid fa-check mr-1"></i>Eşleşti</span>
+                        </div>
+                        <div v-if="statusInfo && statusInfo.accountEmail" class="font-semibold text-gray-800 flex items-center gap-1.5">
+                            <i class="fa-brands fa-google text-blue-600"></i>{{ statusInfo.accountEmail }}
+                        </div>
+                        <div v-else class="text-gray-500 text-xs">Aktif Google oturumu ile bağlı</div>
+                        <div class="border-t border-gray-200 pt-1.5 mt-1.5">
+                            <div class="text-gray-500 mb-0.5">Veritabanı (Google Sheets)</div>
+                            <a v-if="statusInfo && statusInfo.url" :href="statusInfo.url" target="_blank" rel="noopener" class="text-blue-600 hover:underline break-all font-medium"><i class="fa-solid fa-table mr-1"></i>{{ statusInfo.spreadsheet }}</a>
+                            <div v-else class="text-gray-400">Bilgi alınamadı</div>
+                            <div class="text-gray-500 mt-0.5 text-xs">{{ devices.length }} kayıt · Otomatik Yedek: <span :class="statusInfo && statusInfo.dailyBackupActive ? 'text-emerald-600 font-semibold' : 'text-amber-600'">{{ statusInfo && statusInfo.dailyBackupActive ? 'Aktif (03:00)' : 'Pasif' }}</span></div>
+                        </div>
                     </div>
                     <div>
                         <label class="block font-medium text-gray-700 mb-1">PIN değiştir</label>
@@ -658,7 +671,7 @@
                     </div>
                     <div class="space-y-2">
                         <button @click="installBackup" class="w-full bg-emerald-600 text-white p-2 rounded-lg hover:bg-emerald-700 transition font-medium"><i class="fa-brands fa-google-drive mr-2"></i>Günlük Drive Yedeğini Kur / Onar</button>
-                        <button @click="backupToDrive" class="w-full bg-gray-100 text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Şimdi Drive'a Yedekle</button>
+                        <button @click="backupToDriveNow" :disabled="backupRunning" class="w-full bg-gray-100 text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Şimdi Drive'a Yedekle</button>
                         <button @click="signOut" class="w-full bg-gray-100 text-red-600 p-2 rounded-lg hover:bg-red-50 transition"><i class="fa-solid fa-right-from-bracket mr-2"></i>Çıkış (bu cihazdaki PIN'i unut)</button>
                     </div>
                 </div>
@@ -1048,8 +1061,16 @@
                     try { saved = localStorage.getItem(PIN_KEY); } catch (e) {}
                     if (saved) {
                         this.pinInput = saved;
-                        if (await this.connect()) return;
+                        if (await this.connect(true)) return;
                     }
+                    // İlk girişte varsayılan PIN ile otomatik bağlanmayı ve Google hesabını eşlemeyi dene
+                    this.pinInput = 'kuzgun2024';
+                    if (await this.connect(true)) {
+                        this.showToast('İlk kurulum: Google hesabınız ve veritabanı otomatik eşlendi!', 'ok');
+                        return;
+                    }
+                    this.pinInput = '';
+                    this.pinError = '';
                     this.showLogin = true;
                 },
                 async connect(silent) {

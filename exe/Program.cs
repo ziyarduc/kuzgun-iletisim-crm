@@ -86,6 +86,7 @@ namespace KuzgunCrmSetup
 
                 ProcessStartInfo psi = new ProcessStartInfo(ps, sb.ToString());
                 psi.UseShellExecute = false;
+                psi.WorkingDirectory = baseDir;
                 using (Process p = Process.Start(psi))
                 {
                     if (p == null) throw new InvalidOperationException("PowerShell sureci baslatilamadi");

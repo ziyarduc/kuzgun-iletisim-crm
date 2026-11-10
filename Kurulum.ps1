@@ -5,6 +5,8 @@ param(
     [switch]$Hazirlik,
     [switch]$Manuel,
     [switch]$Yenile,
+    [switch]$Sifirdan,
+    [switch]$Etkilesimli,
     [switch]$Test
 )
 
@@ -32,6 +34,7 @@ function Adim { param($t)
     Write-Host ('-- ' + $script:AdimNo + ') ' + $t) -ForegroundColor Magenta
 }
 function Devam { param($varsayilan = '')
+    if (-not $Etkilesimli) { return '' }
     if ($varsayilan -ne '') { $cevap = Read-Host ("  Enter = devam (" + $varsayilan + ")  [C] Cikis") }
     else { $cevap = Read-Host '  Enter ile devam edin  [C] Cikis' }
     if ($cevap -match '^[CcçÇ]$') {
@@ -48,6 +51,49 @@ function BaglantiVarMi {
 }
 function KomutVarMi { param([string]$ad) return [bool](Get-Command $ad -ErrorAction SilentlyContinue) }
 
+function PathYenile {
+    try {
+        $mPath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $uPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $ek = @(
+            (Join-Path $env:ProgramFiles 'nodejs'),
+            (Join-Path ${env:ProgramFiles(x86)} 'nodejs'),
+            (Join-Path $env:APPDATA 'npm')
+        ) | Where-Object { $_ -and (Test-Path $_) }
+        $env:Path = ($mPath, $uPath, ($ek -join ';')) -join ';'
+    } catch {}
+}
+
+function NodeOtomatikKur {
+    Bilgi '  [ ] Node.js sistemde bulunamadi, otomatik kuruluyor (winget)...'
+    if (KomutVarMi 'winget') {
+        try {
+            & winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent 2>&1 | Out-Null
+            PathYenile
+            if (KomutVarMi 'node') {
+                Basari '  [OK] Node.js winget ile otomatik kuruldu!'
+                return $true
+            }
+        } catch {}
+    }
+    try {
+        Bilgi '  [ ] Node.js resmi MSI paketi indiriliyor ve sessiz kuruluyor (~25 MB)...'
+        $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+        $msiUrl = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-$arch.msi"
+        $msiYol = Join-Path $env:TEMP "node-lts-$arch.msi"
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiYol -UseBasicParsing -TimeoutSec 120
+        $p = Start-Process msiexec.exe -ArgumentList "/i `"$msiYol`" /qn /norestart" -Wait -PassThru
+        PathYenile
+        if (KomutVarMi 'node') {
+            Basari '  [OK] Node.js MSI ile otomatik kuruldu!'
+            return $true
+        }
+    } catch {
+        Uyari ('  [!] Otomatik Node.js kurulumu tamamlanamadi: ' + $_.Exception.Message)
+    }
+    return $false
+}
+
 function Asama1_Bilgilendirme {
     Baslik 'ASAMA 1 - BILGILENDIRME (neyin ne ise yaradigi)'
     Bilgi 'Bu program, Kuzgun Iletisim CRM''ini Google''in bulutuna kurar; size tek bir'
@@ -56,47 +102,22 @@ function Asama1_Bilgilendirme {
     Satir White '  1) GOOGLE HESABI (ucretsiz, ~2 dakika)'
     Satir Gray '     - Veriler Google''in bulutunda tutulacagi icin bir Google (Gmail) hesabi sart.'
     Satir Gray '     - Hesabiniz yoksa: https://accounts.google.com  ->  "Hesap olusturun"'
-    Satir Gray '       Adiniz,@sifreniz, telefon dogrulamasi. Bu islemi siz yaparsiniz;'
-    Satir Gray '       program sizin adiniza hesap acamaz ve sifrenizi goremez.'
     Write-Host ''
     Satir White '  2) GOOGLE SHEETS (E-Tablo) = BULUT EXCEL'
-    Satir Gray '     - Normal Excel gibi tablo, ama dosya Google''in sunucusunda: her cihazdan acilir.'
     Satir Gray '     - Bizim VERITABANIMIZ bu. Kurulumda "Kuzgun Iletisim CRM Verileri"'
-    Satir Gray '       adli E-Tablo sizin Drive''inizda otomatik olusur.'
+    Satir Gray '       adli E-Tablo sizin Drive''inizda otomatik olusur ve hesabinizla eslenir.'
     Write-Host ''
     Satir White '  3) APPS SCRIPT = GOOGLE''IN UCRETSIZ KOD MOTORU'
     Satir Gray '     - Kendi sunucunuz, hosting, alan adi, aylik ucret YOK. Kod Google''da calisir.'
-    Satir Gray '     - Uygulamanin uc parzasi:'
-    Write-Host '       * Code.gs     -> BEYIN/SUNUCU: E-Tablo''ya yazar-okuur, PIN kontrolu, yedek.' -ForegroundColor Gray
-    Write-Host '       * index       -> YUZ: ekran, menu, butonlar (tarayicida gorunur).' -ForegroundColor Gray
-    Write-Host '       * appsscript  -> AYAR: saat dilimi, kimler erisebilir (manifest).' -ForegroundColor Gray
-    Satir Gray '     - Yayindan sonra ortaya CIKAN TEK SEY: bir web adresi (.../exec).'
     Write-Host ''
-    Satir White '  4) WEB UYGULAMASI (YAYIN)'
-    Satir Gray '     - Kurulum sonunda elinizde kalacak iki sey: ADRES + PIN (varsayilan: kuzgun2024).'
-    Satir Gray '     - Telefonda: adresi ac -> PIN gir -> menu -> "Ana ekrana ekle".'
-    Write-Host ''
-    Satir White '  5) PIN VE GUVENLIK'
-    Satir Gray '     - PIN her istekte SUNUCUDA kontrol edilir; bilen girer. Ilk giristen sonra'
-    Satir Gray '       Ayarlar (disli ikon) ile degistirin.'
-    Satir Gray '     - Uygulama "Ben" olarak yayinlanir: kod sizin hesabinizda calisir.'
-    Write-Host ''
-    Satir White '  6) BU PROGRAM NE YAPAR / NE YAPMAZ'
-    Satir Green '     Yapar : gereksinim kontrolu, gerekirse Node.js/clasp indirir, dosyalari'
-    Satir Green '             hazirlar, Google''da yeni Apps Script projesi olusturur, kodu'
-    Satir Green '             yukler, yayinlar, adresi kaydeder, masaustu kisayolu olusturur.'
-    Satir Red '     Yapmaz: sizin yerinize Google hesabi acmaz, sifrenizi saklamaz, sunucu/'
-    Satir Red '             hizmet kurmaz (sadece kucuk bir calisma klasoru), mevcut dosyalarinizi silmez.'
-    Write-Host ''
-    Satir White '  7) VERI NEREDE, YEDEK NEREDE?'
-    Satir Gray '     - Ana veri : sizin Google E-Tablonuz (Drive).'
-    Satir Gray '     - Gunluk yedek: Drive''da "Kuzgun CRM Yedekleri" (JSON, son 30 gun).'
-    Satir Gray '     - Bu PC: %LOCALAPPDATA%\KuzgunCRM (adres, proje kopyasi) + tarayici onbellegi.'
-    Satir Gray '     - Geri almak isterseniz: ucretli bir abonelik YOK; her seyi silebilirsiniz.'
+    Satir White '  4) WEB UYGULAMASI (YAYIN) & ILK GIRISTE OTOMATIK ESLESTIRME'
+    Satir Gray '     - Kurulum sonunda CRM tarayicida otomatik acilir, varsayilan PIN ile'
+    Satir Gray '       Google hesabiniz, E-Tablonuz ve Gunluk Drive Yedekleme otomatik eslenir!'
     Write-Host ''
 }
 
 function Asama2_Gereksinim {
+    PathYenile
     Basari '  [ ] Internet baglantisi ...'
     $net = BaglantiVarMi
     if ($net) { Basari ('  [OK] Internet: var (' + (Get-Date -Format HH:mm:ss) + ')') }
@@ -105,11 +126,10 @@ function Asama2_Gereksinim {
     $nodeOk = $false; $nodeS = 'YOK'
     if (KomutVarMi 'node') {
         $nodeS = (& node -v 2>&1 | Out-String).Trim()
-        $major = 0; [void][int]::TryParse(($nodeS -replace '[^0-9]', ''), [ref]$major)
-        $major = [int]($nodeS -replace '^v(\d+)\..*$', '$1')
+        $major = 0; [void][int]::TryParse(($nodeS -replace '^v(\d+)\..*$', '$1'), [ref]$major)
         if ($major -ge 16) { $nodeOk = $true; Basari ("  [OK] Node.js: " + $nodeS) }
         else { Uyari ("  [!] Node.js eski: " + $nodeS + ' (16+ gerekli)') }
-    } else { Uyari '  [!] Node.js yok (otomatik kurulum icin gerekli; manuel mod gerekmez)' }
+    } else { Uyari '  [!] Node.js yok (otomatik kurulacak)' }
 
     $npmOk = KomutVarMi 'npm'
     if ($npmOk) { Basari ('  [OK] npm: ' + (& npm -v 2>&1 | Out-String).Trim()) } else { Uyari '  [!] npm yok' }
@@ -123,7 +143,7 @@ function Asama2_Gereksinim {
     $yerelClasp = Join-Path (Join-Path $Proje 'node_modules\.bin') 'clasp.cmd'
     if (KomutVarMi 'clasp') { Basari '  [OK] clasp: sistemde kurulu' }
     elseif (Test-Path $yerelClasp) { Basari '  [OK] clasp: onceki kurulumdan (proje ici)' }
-    else { Uyari '  [ ] clasp kurulacak (otomatik modda, proje klasorune; yonetici yetkisi gerekmez)' }
+    else { Uyari '  [ ] clasp: otomatik kurulacak (proje klasorune)' }
 
     return [pscustomobject]@{ Internet = $net; Node = $nodeOk; Npm = $npmOk; Kaynak = $kaynakOk }
 }
@@ -147,7 +167,44 @@ function ConfigYaz {
 }
 function ConfigOku {
     $yol = ConfigYol
-    if (Test-Path $yol) { return (Get-Content $yol -Raw | ConvertFrom-Json) } return $null
+    if (Test-Path $yol) {
+        try { return (Get-Content $yol -Raw | ConvertFrom-Json) } catch {}
+    }
+    return $null
+}
+
+function OncekiKurulumBul {
+    $cfg = ConfigOku
+    $claspDosya = Join-Path $Proje '.clasp.json'
+    $scriptId = $null
+    if (Test-Path $claspDosya) {
+        try {
+            $claspObj = Get-Content $claspDosya -Raw | ConvertFrom-Json
+            if ($claspObj -and $claspObj.scriptId) { $scriptId = $claspObj.scriptId }
+        } catch {}
+    }
+    if (-not $scriptId -and $cfg -and $cfg.scriptId) {
+        $scriptId = $cfg.scriptId
+        if (-not (Test-Path $Proje)) { New-Item -ItemType Directory -Path $Proje -Force | Out-Null }
+        @{ scriptId = $scriptId; rootDir = '.' } | ConvertTo-Json | Set-Content $claspDosya -Encoding UTF8
+    }
+    if ($cfg -or $scriptId) {
+        $erisim = 'ANYONE'
+        if ($cfg -and $cfg.erisim) { $erisim = $cfg.erisim }
+        $url = $null
+        if ($cfg -and $cfg.url) { $url = $cfg.url }
+        $depId = $null
+        if ($cfg -and $cfg.deploymentId) { $depId = $cfg.deploymentId }
+        return [pscustomobject]@{
+             Bulundu = $true
+             Url = $url
+             DeploymentId = $depId
+             ScriptId = $scriptId
+             Erisim = $erisim
+             EskiSurum = if ($cfg -and $cfg.surum) { $cfg.surum } else { 'v2.0 (Eski)' }
+        }
+    }
+    return [pscustomobject]@{ Bulundu = $false }
 }
 
 function ClaspYoluBul {
@@ -161,9 +218,14 @@ function Clasp-Cagir {
     $yol = ClaspYoluBul
     if (-not $yol) { throw 'clasp bulunamadi' }
     if (-not $Sessiz) { Write-Host ('    > clasp ' + ($Argumanlar -join ' ')) -ForegroundColor DarkGray }
-    $cikti = & $yol @Argumanlar 2>&1 | Out-String
-    $kod = $LASTEXITCODE
-    $script:ClaspLog += "`n$ clasp $($Argumanlar -join '')`n$cikti"
+    Push-Location $Proje
+    try {
+        $cikti = & $yol @Argumanlar 2>&1 | Out-String
+        $kod = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+    $script:ClaspLog += "`n$ clasp $($Argumanlar -join ' ')`n$cikti"
     if ($kod -ne 0) {
         throw ("clasp basarisiz ($Is, kod $kod):`n" + $cikti.Trim())
     }
@@ -171,109 +233,249 @@ function Clasp-Cagir {
 }
 
 function Asama_OtomatikKurulum {
-    param([string]$erisim)
+    param([string]$erisim, $onceki = $null)
 
-    Adim 'Clasp (Google aracisi) kuruluyor'
+    Adim 'Clasp (Google aracisi) kontrol ediliyor'
     if (-not (ClaspYoluBul)) {
-        Uyari '    Proje icine clasp kuruluyor (npm, ~1 dk)...'
+        Bilgi '    Proje icine clasp kuruluyor (npm, ~30-60 sn)...'
         Push-Location $Proje
-        & npm i @google/clasp --no-fund --no-audit 2>&1 | Select-Object -Last 3 | ForEach-Object { Write-Host ('    ' + $_) -ForegroundColor DarkGray }
-        Pop-Location
+        try {
+            & npm i @google/clasp --no-fund --no-audit 2>&1 | Select-Object -Last 3 | ForEach-Object { Write-Host ('    ' + $_) -ForegroundColor DarkGray }
+        } finally {
+            Pop-Location
+        }
         if (-not (ClaspYoluBul)) { throw 'clasp kurulamadi (npm/node kontrol edin)' }
     }
     Basari '    [OK] clasp hazir'
 
-    Adim 'Google ile giris (tarayici acilacak)'
-    Uyari '    Tarayicida Google hesabinizla giris yapin ve izin verin.'
-    Uyari '    Bu pencereden ayriLMAYIN; islem bitince otomatik devam eder.'
+    Adim 'Google Hesabi Esleme ve Giris Kontrolu'
     $yetkili = $false
-    try { $out = Clasp-Cagir -Argumanlar @('show-authorized-user') -Sessiz; $yetkili = ($out -match '@') } catch { $yetkili = $false }
-    if (-not $yetkili) {
-        $null = Clasp-Cagir -Argumanlar @('login')
-        Basari '    [OK] Google girisi tamam'
-    } else { Basari '    [OK] Zaten giris yapilmis' }
+    $hesap = ''
+    try {
+        $out = Clasp-Cagir -Argumanlar @('show-authorized-user') -Sessiz
+        if ($out -match '[\w\.-]+@[\w\.-]+\.\w+') {
+            $yetkili = $true
+            $hesap = $Matches[0]
+        } elseif ($out -match '@') {
+            $yetkili = $true
+        }
+    } catch { $yetkili = $false }
 
-    Adim 'Apps Script API acik mi? (tarayici acilacak)'
-    Uyari '    Acan sayfada "Apps Script API" anahtarini ACIK yapin, sonra Enter''a basin.'
-    Start-Process 'https://script.google.com/home/usersettings'
-    $null = Read-Host '    Hazir olunca Enter'
-    Start-Sleep -Seconds 1
+    if (-not $yetkili) {
+        Bilgi '    Tarayicida Google giris ekrani aciliyor. Lutfen Google hesabinizi secip izin verin...'
+        $null = Clasp-Cagir -Argumanlar @('login')
+        try {
+            $out2 = Clasp-Cagir -Argumanlar @('show-authorized-user') -Sessiz
+            if ($out2 -match '[\w\.-]+@[\w\.-]+\.\w+') { $hesap = $Matches[0] }
+        } catch {}
+        Basari ('    [OK] Google hesabi basariyla eslendi' + $(if ($hesap) { ": $hesap" } else { '' }))
+    } else {
+        Basari ('    [OK] Mevcut Google hesabi algilandi ve eslendi' + $(if ($hesap) { ": $hesap" } else { '' }))
+    }
 
     $cikarilmis = $false
-    if (Test-Path (Join-Path $Proje '.clasp.json')) {
-        $claspCfg = Get-Content (Join-Path $Proje '.clasp.json') -Raw | ConvertFrom-Json
-        if ($claspCfg.scriptId) { $cikarilmis = $true; Basari '    [OK] Mevcut Apps Script projesi kullanilacak' }
-    }
-    if (-not $cikarilmis) {
-        Adim 'Google''da yeni Apps Script projesi olusturuluyor'
-        $null = Clasp-Cagir -Argumanlar @('create-script', '--title', 'Kuzgun Iletisim CRM', '--type', 'webapp', '--rootDir', '.')
-        Basari '    [OK] Proje olusturuldu'
+    $mevcutScriptId = $null
+    $claspJsonYol = Join-Path $Proje '.clasp.json'
+    if (Test-Path $claspJsonYol) {
+        try {
+            $claspCfg = Get-Content $claspJsonYol -Raw | ConvertFrom-Json
+            if ($claspCfg.scriptId) {
+                $cikarilmis = $true
+                $mevcutScriptId = $claspCfg.scriptId
+                Basari ('    [OK] Mevcut Apps Script projesi algilandi (ID: ' + $mevcutScriptId + ')')
+            }
+        } catch {}
     }
 
-    Adim 'Kod yukleniyor (push)'
-    $null = Clasp-Cagir -Argumanlar @('push', '--force')
-    Basari '    [OK] Code.gs + index.html + manifest yuklendi'
+    # Eger .clasp.json yoksa ama Google hesabinda daha once "Kuzgun Iletisim CRM" varsa bulmaya calis
+    if (-not $cikarilmis -and -not $Sifirdan) {
+        try {
+            $listOut = Clasp-Cagir -Argumanlar @('list') -Sessiz
+            foreach ($line in ($listOut -split "`r?`n")) {
+                if ($line -match 'Kuzgun' -and $line -match 'script\.google\.com/d/([a-zA-Z0-9_-]+)') {
+                    $mevcutScriptId = $Matches[1]
+                    @{ scriptId = $mevcutScriptId; rootDir = '.' } | ConvertTo-Json | Set-Content $claspJsonYol -Encoding UTF8
+                    $cikarilmis = $true
+                    Basari ('    [OK] Buluttaki mevcut Kuzgun CRM projesi bulundu ve baglandi (ID: ' + $mevcutScriptId + ')')
+                    break
+                }
+            }
+        } catch {}
+    }
 
-    Adim 'Yayin (web uygulamasi)'
+    # Projeyi olustur veya kodu yukle (Apps Script API kapaliysa otomatik algilayip ac)
+    for ($apiDeneme = 1; $apiDeneme -le 2; $apiDeneme++) {
+        try {
+            if (-not $cikarilmis) {
+                Adim 'Google Bulutta yeni Apps Script projesi olusturuluyor'
+                $null = Clasp-Cagir -Argumanlar @('create-script', '--title', 'Kuzgun Iletisim CRM', '--type', 'webapp', '--rootDir', '.')
+                if (Test-Path $claspJsonYol) {
+                    $claspCfg = Get-Content $claspJsonYol -Raw | ConvertFrom-Json
+                    $mevcutScriptId = $claspCfg.scriptId
+                }
+                $cikarilmis = $true
+                Basari '    [OK] Proje olusturuldu'
+            }
+
+            Adim 'Guncel kodlar buluta yukleniyor (push)'
+            $null = Clasp-Cagir -Argumanlar @('push', '--force')
+            Basari '    [OK] Code.gs + index.html + manifest basariyla yuklendi'
+            break
+        } catch {
+            $hataMesaj = $_.Exception.Message
+            if ($apiDeneme -eq 1 -and ($hataMesaj -match 'User has not enabled the Apps Script API' -or $hataMesaj -match 'script\.google\.com/home/usersettings' -or $hataMesaj -match 'API')) {
+                Uyari '    [!] Google Apps Script API henuz acik degil. Ayar sayfasi aciliyor...'
+                Start-Process 'https://script.google.com/home/usersettings'
+                $cevapApi = Read-Host '    Acilan sayfada "Google Apps Script API" anahtarini ACIK yapip Enter''a basin ([C] Cikis)'
+                if ($cevapApi -match '^[CcçÇ]$') { exit 0 }
+                Start-Sleep -Seconds 2
+            } elseif ($cikarilmis -and $apiDeneme -eq 1) {
+                # Eski scriptId gecersiz veya silinmis olabilir; sifirdan olusturmayi dene
+                Uyari '    [!] Eski proje kimligine erisilemedi, yeni proje olusturuluyor...'
+                if (Test-Path $claspJsonYol) { Remove-Item $claspJsonYol -Force -ErrorAction SilentlyContinue }
+                $cikarilmis = $false
+            } else {
+                throw
+            }
+        }
+    }
+
+    Adim 'Yayin (Web Uygulamasi) guncelleniyor / olusturuluyor'
     $deploymentId = $null
     $eskiCfg = ConfigOku
-    if ($eskiCfg -and $eskiCfg.deploymentId) { $deploymentId = $eskiCfg.deploymentId }
-    $aciklama = 'Kuzgun CRM ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')
-    $cikti = ''
-    if ($deploymentId) {
-        $cikti = Clasp-Cagir -Argumanlar @('create-deployment', '-i', $deploymentId, '-d', $aciklama, '--json')
-    } else {
-        $cikti = Clasp-Cagir -Argumanlar @('create-deployment', '-d', $aciklama, '--json')
+    if ($onceki -and $onceki.DeploymentId) { $deploymentId = $onceki.DeploymentId }
+    elseif ($eskiCfg -and $eskiCfg.deploymentId) { $deploymentId = $eskiCfg.deploymentId }
+
+    # Eger deploymentId biliniyorsa veya bulutta mevcut bir yayin varsa onu bul
+    if (-not $deploymentId) {
+        try {
+            $depListOut = Clasp-Cagir -Argumanlar @('list-deployments', '--json') -Sessiz
+            $depMatches = [regex]::Matches($depListOut, '"deploymentId"\s*:\s*"([^"]+)"')
+            foreach ($m in $depMatches) {
+                $cand = $m.Groups[1].Value
+                if ($cand -and $cand -ne '@HEAD') { $deploymentId = $cand }
+            }
+        } catch {
+            try {
+                $depListTxt = Clasp-Cagir -Argumanlar @('list-deployments') -Sessiz
+                foreach ($line in ($depListTxt -split "`r?`n")) {
+                    if ($line -match '-\s+([A-Za-z0-9_-]{20,})\s+@\d+') {
+                        $deploymentId = $Matches[1]
+                    }
+                }
+            } catch {}
+        }
     }
+
+    $aciklama = 'Kuzgun CRM ' + $Surdur + ' (' + (Get-Date -Format 'yyyy-MM-dd HH:mm') + ')'
+    $cikti = ''
+    $yayinTamam = $false
+
+    if ($deploymentId) {
+        # Hem yeni clasp (create-deployment -i) hem eski clasp (deploy -i) dene
+        foreach ($komut in @('create-deployment', 'deploy')) {
+            if ($yayinTamam) { break }
+            try {
+                $cikti = Clasp-Cagir -Argumanlar @($komut, '-i', $deploymentId, '-d', $aciklama, '--json') -Sessiz
+                $yayinTamam = $true
+            } catch {
+                try {
+                    $cikti = Clasp-Cagir -Argumanlar @($komut, '-i', $deploymentId, '-d', $aciklama) -Sessiz
+                    $yayinTamam = $true
+                } catch {}
+            }
+        }
+    }
+
+    if (-not $yayinTamam) {
+        foreach ($komut in @('create-deployment', 'deploy')) {
+            if ($yayinTamam) { break }
+            try {
+                $cikti = Clasp-Cagir -Argumanlar @($komut, '-d', $aciklama, '--json') -Sessiz
+                $yayinTamam = $true
+            } catch {
+                try {
+                    $cikti = Clasp-Cagir -Argumanlar @($komut, '-d', $aciklama) -Sessiz
+                    $yayinTamam = $true
+                } catch {}
+            }
+        }
+    }
+
     try {
         $j = $cikti | Select-String -Pattern '\{[\s\S]*\}' | ForEach-Object { $_.Matches[0].Value } | Select-Object -First 1
-        $dep = $j | ConvertFrom-Json
-        if ($dep.deploymentId) { $deploymentId = $dep.deploymentId }
+        if ($j) {
+            $dep = $j | ConvertFrom-Json
+            if ($dep.deploymentId) { $deploymentId = $dep.deploymentId }
+        }
     } catch {}
-    if (-not $deploymentId) { Uyari '    [!] deploymentId okunamadi, URL adimi deneniyor' }
-    else { Basari '    [OK] Yayin olusturuldu' }
+    if (-not $deploymentId -and $cikti -match 'Deployed\s+([A-Za-z0-9_-]+)\s+@') {
+        $deploymentId = $Matches[1]
+    }
 
-    Adim 'Web adresi aliniyor'
+    if ($deploymentId) {
+        Basari ('    [OK] Yayin hazir (ID: ' + $deploymentId + ')')
+    } else {
+        Uyari '    [!] deploymentId dogrudan okunamadi, yayin listesinden aliniyor...'
+    }
+
+    Adim 'Web adresi dogrulaniyor'
     $url = $null
     if ($deploymentId) {
-        try {
-            $cikti2 = Clasp-Cagir -Argumanlar @('open-web-app', $deploymentId, '--json') -Sessiz
-            if ($cikti2 -match 'https://script\.google\.com[^\s"]*exec') { $url = $Matches[0] }
-        } catch {}
+        $url = "https://script.google.com/macros/s/$deploymentId/exec"
     }
     if (-not $url) {
         try {
-            $cikti3 = Clasp-Cagir -Argumanlar @('list-deployments', '--json') -Sessiz
-            if ($cikti3 -match 'https://script\.google\.com[^\s"]*exec') { $url = $Matches[0] }
+            $cikti3 = Clasp-Cagir -Argumanlar @('list-deployments') -Sessiz
+            foreach ($line in ($cikti3 -split "`r?`n")) {
+                if ($line -match '-\s+([A-Za-z0-9_-]{20,})\s+@\d+') {
+                    $deploymentId = $Matches[1]
+                    $url = "https://script.google.com/macros/s/$deploymentId/exec"
+                }
+            }
         } catch {}
     }
-    if (-not $url) { throw 'Web uygulamasi adresi alinamadi. Clasp loguna bakin veya yayini tarayicida elle tamamlayin.' }
+    if (-not $url -and $onceki -and $onceki.Url) {
+        $url = $onceki.Url
+    }
+    if (-not $url) { throw 'Web uygulamasi adresi alinamadi. Clasp loguna bakin.' }
     Basari ('    [OK] ' + $url)
 
-    return @{ url = $url; deploymentId = $deploymentId }
+    return @{ url = $url; deploymentId = $deploymentId; scriptId = $mevcutScriptId; account = $hesap }
 }
 
 function Asama4_Tamam {
-    param([hashtable]$sonuc)
-    Baslik 'ASAMA 4 - TAMAMLANDI'
-    Basari '  CRM yayinda:'
-    Satir White ('    ADRES : ' + $sonuc.url)
-    Satir White '    PIN   : kuzgun2024  (ilk giristen sonra AYARLARDAN degistirin)'
+    param([hashtable]$sonuc, [bool]$guncellendi = $false)
+    if ($guncellendi) {
+        Baslik ('ISLEM TAMAMLANDI - KURULUM GUNCELLENDI (' + $Surdur + ')')
+        Basari '  Mevcut CRM kurulumunuz basariyla guncellendi ve Google hesabinizla eslendi:'
+    } else {
+        Baslik ('ISLEM TAMAMLANDI - YENI KURULUM HAZIR (' + $Surdur + ')')
+        Basari '  CRM buluta kuruldu ve Google hesabinizla eslendi:'
+    }
+    Satir White ('    ADRES         : ' + $sonuc.url)
+    if ($sonuc.account) {
+        Satir White ('    GOOGLE HESABI : ' + $sonuc.account + ' (Otomatik Eslendi)')
+    }
+    Satir White '    VARSAYILAN PIN: kuzgun2024  (Ilk giriste otomatik baglanir)'
     Write-Host ''
-    Satir Gray '  - Telefonunuzda adesi acin, PIN girin, menu > "Ana ekrana ekle".'
-    Satir Gray '  - Masaustune "Kuzgun CRM" kisayolu eklendi.'
-    Satir Gray '  - Gunluk yedek: uygulama ici Ayarlar > "Gunluk Drive Yedeğini Kur".'
-    Satir Gray '  - Guncelleme icin: KuzgunCRM_Kurulum.cmd dosyasini tekrar calistirin.'
+    Satir Gray '  - CRM simdi tarayicinizda otomatik aciliyor ve Google hesabinizla esleniyor.'
+    Satir Gray '  - Masaustune "Kuzgun CRM" kisayolu eklendi / guncellendi.'
+    Satir Gray '  - Tekrar guncellemek icin KuzgunCRM_Kurulum.exe dosyasina cift tiklamaniz yeterlidir.'
     Write-Host ''
     if ($script:ClaspLog) {
         $log = Join-Path $Ana 'kurulum.log'
         Set-Content -Path $log -Value $script:ClaspLog -Encoding UTF8
         Satir Gray ('  Kurulum logu: ' + $log)
     }
-    Start-Process $sonuc.url
+    try { Start-Process $sonuc.url } catch {}
     Write-Host ''
-    Satir Green '  Kurulum basariyla tamamlandi.'
-    $null = Read-Host '  Pencereyi kapatmak icin Enter tusuna basin'
+    Satir Green '  Otomatik islem basariyla tamamlandi! (3 saniye icinde kapaniyor...)'
+    if ($Etkilesimli) {
+        $null = Read-Host '  Pencereyi kapatmak icin Enter tusuna basin'
+    } else {
+        Start-Sleep -Seconds 3
+    }
 }
 
 function KisayolOlustur {
@@ -286,44 +488,76 @@ function KisayolOlustur {
     } catch { Uyari ('  [!] Kisayol olusturulamadi: ' + $_.Exception.Message) }
 }
 
-function GuncellemeYap {
-    param($mevcut)
-    $d = Asama2_Gereksinim
-    if (-not ($d.Internet -and $d.Node -and $d.Npm -and $d.Kaynak)) {
-        Hata '  Guncelleme icin gereksinimler eksik. Node.js: https://nodejs.org'
+function OtomatikCalistir {
+    param($onceki)
+    $guncellemeMi = [bool]($onceki -and $onceki.Bulundu -and -not $Sifirdan)
+    if ($guncellemeMi) {
+        Baslik ('ONCEKI KURULUM ALGILANDI -> OTOMATIK GUNCELLENIYOR (' + $Surdur + ')')
+        if ($onceki.Url) { Satir White ('    MEVCUT ADRES  : ' + $onceki.Url) }
+        if ($onceki.ScriptId) { Satir White ('    PROJE KIMLIGI : ' + $onceki.ScriptId) }
+        Satir Cyan '    Mevcut verileriniz korunarak yeni surum (v2.1.0) uzerine yaziliyor...'
+    } else {
+        Baslik ('TEK TIKLA OTOMATIK KURULUM BASLATILIYOR (' + $Surdur + ')')
+        Satir Cyan '    Hicbir ek ayar gerektirmeden otomatik kurulum ve Google eslemesi yapiliyor...'
+    }
+
+    $durum = Asama2_Gereksinim
+    if (-not $durum.Internet) {
+        Hata '  Internet baglantisi yok! Lutfen internetinizi kontrol edip tekrar deneyin.'
         exit 1
     }
+    if (-not $durum.Node) {
+        $kuruldu = NodeOtomatikKur
+        if (-not $kuruldu -and -not (KomutVarMi 'node')) {
+            Uyari '  Node.js otomatik kurulamadi. Indirme sayfasi aciliyor...'
+            Start-Process 'https://nodejs.org/'
+            $cevapNode = Read-Host '  Node.js kurduktan sonra Enter''a basin  [C] Cikis'
+            if ($cevapNode -match '^[CcçÇ]$') { exit 0 }
+            PathYenile
+            if (-not (KomutVarMi 'node')) {
+                Hata '  Node.js hala bulunamadi. Manuel kilavuza geciliyor.'
+                ManuelRehber
+                exit 1
+            }
+        }
+    }
+
     $erisim = 'ANYONE'
-    if ($mevcut -and $mevcut.erisim) { $erisim = $mevcut.erisim }
+    if ($onceki -and $onceki.Erisim) { $erisim = $onceki.Erisim }
+
     DosyalariHazirla -erisim $erisim
-    $sonuc = Asama_OtomatikKurulum -erisim $erisim
-    ConfigYaz @{ url = $sonuc.url; deploymentId = $sonuc.deploymentId; erisim = $erisim; guncelleme = (Get-Date -Format o); surum = $Surdur }
+    $sonuc = Asama_OtomatikKurulum -erisim $erisim -onceki $onceki
+    ConfigYaz @{
+        url = $sonuc.url
+        deploymentId = $sonuc.deploymentId
+        scriptId = $sonuc.scriptId
+        googleAccount = $sonuc.account
+        erisim = $erisim
+        guncelleme = (Get-Date -Format o)
+        surum = $Surdur
+    }
     KisayolOlustur -url $sonuc.url
-    Asama4_Tamam -sonuc $sonuc
+    Asama4_Tamam -sonuc $sonuc -guncellendi $guncellemeMi
 }
 
 function ManuelRehber {
-    Baslik 'MANUEL KILAVUZ (adim adim, yaklasik 10 dakika)'
-    Bilgi 'Otomatik kurulum calismazsa bu adimlari izleyin. Her adimda ne ise'
-    Bilgi 'yaradigi yaziyor.'
+    Baslik 'MANUEL KILAVUZ (adim adim, yaklasik 5 dakika)'
+    Bilgi 'Otomatik kurulum calismazsa bu adimlari izleyin:'
     Write-Host ''
     Satir White '  A) Google hesabi (yoksa): https://accounts.google.com  -> Hesap olusturun'
     Satir White '  B) Yeni E-Tablo (bulut Excel = veritabani): https://sheets.new'
     Satir White '  C) Uzantilar > Apps Script (kod motoru)'
     Satir White '  D) Code.gs icerigini yapistirin (kopyala-yapistir):'
     Satir Gray ('       notepad "' + (Join-Path $Kaynak 'Code.gs') + '"')
-    Satir Gray '     Notepad > Tamamini sec (Ctrl+A), kopyala (Ctrl+C) > editore yapistir (Ctrl+V).'
     Satir White '  E) + > HTML dosyasi, adini "index" yapin, HTML icerigini yapistirin:'
     Satir Gray ('       notepad "' + (Join-Path $Kaynak 'Kuzgun_Iletisim_CRM.html') + '"')
-    Satir White '  F) Apps Script API anahtarini ACIN (yoksa yayin hata verir):'
+    Satir White '  F) Apps Script API anahtarini ACIN:'
     Satir Gray '       https://script.google.com/home/usersettings'
     Satir White '  G) Dagitim > Yeni dagitim > Web uygulamasi:'
     Satir Gray '       Calistirilacak kisi: Ben   |   Erisim izni: Su herkes'
-    Satir White '  H) Verilen /exec adresini acin, PIN: kuzgun2024'
-    Satir White '  I) Icinde: Ayarlar (disli) > PIN degistir + Gunluk Drive Yedeğini Kur'
+    Satir White '  H) Verilen /exec adresini acin (Ilk giriste otomatik eslenir, PIN: kuzgun2024)'
     Write-Host ''
     Satir Yellow ('  Not: Kod ve HTML dosyalari bu klasorde: ' + $Kaynak)
-    Uyari '  Hazir olunca tek yapmaniz gereken G adimindaki URL''yi kaydetmektir.'
 }
 
 function TestModu {
@@ -346,9 +580,16 @@ function TestModu {
         }
         $mHtml = Get-Content (Join-Path $testKlasor 'index.html') -Raw
         if ($mHtml -notmatch 'createApp') { Hata '  [X] index.html bozuk'; $basarili = $false }
-        ConfigYaz @{ url = 'https://script.google.com/macros/s/TEST/exec'; deploymentId = 'D1' }
+        ConfigYaz @{ url = 'https://script.google.com/macros/s/TEST/exec'; deploymentId = 'D1'; scriptId = 'S1' }
         $geri = ConfigOku
         if ($geri.url -like '*exec') { Basari '  [OK] kurulum bilgisi yazma/okuma' } else { Hata '  [X] config yuvarlak yol'; $basarili = $false }
+
+        $algilanan = OncekiKurulumBul
+        if ($algilanan.Bulundu -and $algilanan.DeploymentId -eq 'D1' -and $algilanan.ScriptId -eq 'S1') {
+            Basari '  [OK] onceki kurulum otomatik algilama ve kurtarma'
+        } else {
+            Hata '  [X] onceki kurulum algilama basarisiz'; $basarili = $false
+        }
 
         $fakeBin = Join-Path $testKlasor 'node_modules\.bin'
         if (-not (Test-Path $fakeBin)) { New-Item -ItemType Directory -Path $fakeBin -Force | Out-Null }
@@ -380,13 +621,6 @@ exit /b 0
         $script:Ana = $eskiAna
     }
 
-    $ornek = '{"deploymentId":"AbCd123","versionNumber":3,"description":"x"}'
-    $dep = $ornek | ConvertFrom-Json
-    if ($dep.deploymentId -eq 'AbCd123') { Basari '  [OK] clasp create-deployment --json cikti okuma' } else { Hata '  [X] json okuma'; $basarili = $false }
-
-    $ornekUrl = "Deployed AbCd123`nhttps://script.google.com/macros/s/AKfycb/execute"
-    if ($ornekUrl -match 'https://script\.google\.com[^\s"]*exec') { Basari '  [OK] URL yakalama deseni' } else { Hata '  [X] URL yakalama'; $basarili = $false }
-
     if ($basarili) { Write-Host ''; Basari 'TEST: TUM KONTROLLER GECTI'; return 0 }
     Write-Host ''; Hata 'TEST: BASARISIZ KONTROLLER VAR'; return 1
 }
@@ -404,67 +638,28 @@ try {
         if ($d.Internet -and $d.Node -and $d.Npm -and $d.Kaynak) { exit 0 } else { exit 1 }
     }
 
-    $mevcutConfig = ConfigOku
-    if ($Yenile) {
-        if ($mevcutConfig -and $mevcutConfig.url) {
-            Baslik 'ONCEKI KURULUM GUNCELLENIYOR'
-            Satir White ('    ADRES : ' + $mevcutConfig.url)
-            GuncellemeYap $mevcutConfig
-            exit 0
-        }
-        Uyari '  Kurulum bilgisi bulunamadi; tam kurulum olarak devam ediliyor.'
+    # Mevcut kurulumu hem kurulum.json hem de .clasp.json uzerinden algila
+    $onceki = OncekiKurulumBul
+
+    # Varsayilan davranis: One-Click Exe! Soru sormadan otomatik kur veya guncelle.
+    if (-not $Etkilesimli) {
+        OtomatikCalistir -onceki $onceki
+        exit 0
     }
 
+    # Etkilesimli mod (-Etkilesimli parametresi verildiginde)
     Asama1_Bilgilendirme
     $null = Devam
 
-    Baslik 'ASAMA 2 - GEREKSINIM KONTROLU'
-    $durum = Asama2_Gereksinim
-
-    $mevcut = ConfigOku
-    if ($mevcut -and $mevcut.url) {
+    if ($onceki.Bulundu) {
         Baslik 'ONCEKI KURULUM BULUNDU'
-        Satir White ('    ADRES : ' + $mevcut.url)
+        if ($onceki.Url) { Satir White ('    ADRES : ' + $onceki.Url) }
         $cevap = Read-Host '  [G] Guncelle (Enter)  [Y] Yeni kurulum (sifirdan)  [C] Cikis'
-        if ($cevap -match '^[CcçÇ]$') {
-            Write-Host '  Cikiliyor...' -ForegroundColor Yellow
-            exit 0
-        }
-        if ($cevap -ne 'Y') {
-            GuncellemeYap $mevcut
-            exit 0
-        }
+        if ($cevap -match '^[CcçÇ]$') { exit 0 }
+        if ($cevap -match '^[Yy]$') { $Sifirdan = $true }
     }
 
-    Baslik 'ASAMA 3 - KURULUM'
-    if (-not $durum.Node) {
-        Uyari '  Node.js kurulu degil (otomatik kurulumun motoru).'
-        Uyari '  Tarayici aciliyor: indirin, kurun, sonra Enter''a basin.'
-        Start-Process 'https://nodejs.org/'
-        $cevapNode = Read-Host '  Kurduysaniz Enter  [C] Cikis'
-        if ($cevapNode -match '^[CcçÇ]$') { exit 0 }
-        if (-not (KomutVarMi 'node')) {
-            Hata '  Node.js hala gorunmuyor. Manuel kilavuza geciliyor.'
-            Write-Host ''
-            ManuelRehber
-            exit 1
-        }
-    }
-
-    $cevap = Read-Host '  Kurulum modu  [O] Otomatik (Enter)  [M] Manuel kilavuz  [C] Cikis'
-    if ($cevap -match '^[CcçÇ]$') { exit 0 }
-    if ($cevap -eq 'M') { ManuelRehber; exit 0 }
-
-    $erisim = 'ANYONE'
-    $cevap2 = Read-Host '  Erisim izni  [A] Google girisi zorunlu (Enter, onerilen)  [B] girissiz herkes acabilsin  [C] Cikis'
-    if ($cevap2 -match '^[CcçÇ]$') { exit 0 }
-    if ($cevap2 -eq 'B') { $erisim = 'ANYONE_ANONYMOUS' }
-
-    DosyalariHazirla -erisim $erisim
-    $sonuc = Asama_OtomatikKurulum -erisim $erisim
-    ConfigYaz @{ url = $sonuc.url; deploymentId = $sonuc.deploymentId; kurulum = (Get-Date -Format o); erisim = $erisim; surum = $Surdur }
-    KisayolOlustur -url $sonuc.url
-    Asama4_Tamam -sonuc $sonuc
+    OtomatikCalistir -onceki $onceki
     exit 0
 }
 catch {
@@ -473,8 +668,8 @@ catch {
     Write-Host ''
     Uyari '  Yayin adiminda sorun olursa elle tamamlayabilirsiniz:'
     Uyari '   1) https://script.google.com/home/usersettings -> Apps Script API acik olsun'
-    Uyari '   2) Script editoru: clasp login durumunu Dogrulamak icin: clasp show-authorized-user'
-    Uyari '   3) Veya asagidaki MANUEL KILAVUZU ile ilerleyin:'
+    Uyari '   2) Script editoru: clasp login durumunu dogrulamak icin: clasp show-authorized-user'
+    Uyari '   3) Veya asagidaki MANUEL KILAVUZ ile ilerleyin:'
     Write-Host ''
     ManuelRehber
     if ($script:ClaspLog) {

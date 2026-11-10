@@ -29,18 +29,16 @@ Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşt
 
 ## Kurulum
 
-### Yol 1: Tek tıkla kurulum (önerilen)
+### Yol 1: Tek Tıkla Otomatik Kurulum & Güncelleme (One-Click EXE - Önerilen)
 
-En kolay yol: bu deponun **Releases** bölümünden `KuzgunCRM_Kurulum.exe`'yi indirin (veya repoyu klonlayın, exe depoda hazır).
+En kolay yol: bu deponun **Releases** bölümünden veya doğrudan ana dizinden **`KuzgunCRM_Kurulum.exe`** dosyasını indirin ve **çift tıklayın**.
 
-Windows'ta **`KuzgunCRM_Kurulum.exe`** dosyasına **çift tıklayın** (tek dosya, tüm kurulum ve kaynaklar içine gömülüdür; ayrı kurulum gerektirmez). Sihirbaz önce **Aşama 1 – Bilgilendirme** ile neyin ne işe yaradığını anlatır (Google hesabı, Sheets, Apps Script, dosyalar, PIN, veri/gizlilik), sonra gereksinimleri kontrol eder ve kurulumu kendisi yapar:
+Hiçbir soru sormadan tam otomatik olarak çalışır:
+* **Önceki Kurulum Algılama & Güncelleme:** Bilgisayarınızda (`%LOCALAPPDATA%\KuzgunCRM`) veya Google hesabınızda daha önce yapılmış bir kurulum varsa otomatik algılar; mevcut verilerinize dokunmadan yeni sürümü (v2.1.0) üzerine günceller.
+* **Sıfırdan Kurulum:** İlk kez çalıştırılıyorsa gerekirse Node.js (winget / MSI ile sessizce) ve `clasp` aracını kurar, Google hesabınızla eşleşir, Apps Script projesini ve web yayınını otomatik oluşturur.
+* **İlk Girişte Otomatik Google Hesabı Eşleme:** Kurulum biter bitmez CRM tarayıcıda açılır, varsayılan PIN ile otomatik giriş yapar, Google hesabınızı (`Session`), E-Tablo veritabanınızı ve Günlük Drive Yedeğini (her gece 03:00) otomatik olarak eşler.
 
-* Gerekirse Node.js kurulum sayfasını açar, `clasp`'ı proje klasörüne kurar (yönetici yetkisi gerekmez)
-* Google hesabınızla tarayıcıdan giriş aldırır, Apps Script API'yi açtırmayı hatırlatır
-* Google'da yeni Apps Script projesi oluşturur, kodu yükler, web uygulaması olarak yayınlar
-* Adresi kaydeder, masaüstüne "Kuzgun CRM" kısayolu koyar, CRM'i tarayıcıda açar
-
-Sihirbaz modları: `-Bilgi` (sadece bilgilendirme), `-Hazirlik` (gereksinim raporu), `-Manuel` (adım adım kılavuz), `-Yenile` (mevcut kurulumu güncelle), `-Test` (dokunmadan doğrulama). Elle kurulum isterseniz sihirbazın "M" seçeneği veya aşağıdaki bölümler. Aynı modlar `.cmd`/`.ps1` üzerinden de çalışır.
+İsteğe bağlı parametreler: `-Etkilesimli` (adım adım sorarak kurulum), `-Sifirdan` (mevcut kurulumu atlayıp yeni proje açma), `-Bilgi` (sadece bilgilendirme), `-Hazirlik` (gereksinim raporu), `-Manuel` (adım adım kılavuz), `-Test` (dokunmadan doğrulama).
 
 ### Yol 2: Elle kurulum (Google Apps Script)
 
