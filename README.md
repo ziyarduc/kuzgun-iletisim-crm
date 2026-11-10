@@ -1,4 +1,4 @@
-# Kuzgun İletişim CRM (v2.1.0)
+# Kuzgun İletişim CRM (v2.2.0)
 
 Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşteri ve Cihaz Takip) sistemi.
 
@@ -8,25 +8,25 @@ Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşt
 *   **Tamir Takip:** Müşteriden alınan cihazların marka, model, IMEI, şifre, müşteri bilgileri ve tamir süreçlerinin takibi.
 *   **Alım & Satım:** Dükkana alınan ve satılan cihazların stok ve fiyat takibi.
 *   **Bulut Senkronizasyon:** Veriler Google Sheets üzerinde tutulur; telefondan, evdeki bilgisayardan veya herhangi bir yerden aynı veriye erişilir. İnternet yoksa uygulama yerel önbellekle çalışmaya devam eder, bağlantı gelince otomatik eşitlenir (bekleyen kuyruk).
-*   **Yedekleme Merkezi (v2.1):** Sol menüde özel 4. sekme! Google Drive'a tek tıkla anlık bulut yedeği alma, Drive'daki geçmiş yedekleri listeleme ve *Akıllı Eşleştirme* veya *Sıfırdan Değiştirme* seçenekleriyle anında geri yükleme.
-*   **Gelişmiş Yedekleme/Geri Yükleme (v2.1):** Geri yükleme öncesi önizleme (kaç kayıt eklenecek/güncellenecek/silinecek), otomatik güvenlik yedeği (Drive + cihazda), son 5 *anlık görüntüden tek tıkla geri alma*, yedek arama/filtre, Drive yedeğini indirme/silme, JSON içe aktarmada Eşle/Sıfırdan seçimi.
-*   **Düzenlenebilir Cihaz Tarihi (v2.1):** Cihaz eklerken varsayılan olarak anlık tarih ve saat otomatik gelir, istenirse takvimden geçmişe veya ileriye dönük serbestçe değiştirilebilir.
-*   **Tarihe Göre Arama ve Hızlı Filtreler (v2.1):** Başlangıç ve bitiş tarih aralığı seçici ile *Bugün, Bu Hafta, Bu Ay, Tümü* hızlı butonları.
-*   **Minecraft Tarzı Fun Fact Penceresi (v2.1):** Sol kenar çubuğunda ve Gösterge Paneli üstünde telefonlar ve otomobiller hakkında 30+ adet rastgele eğlenceli bilgi sunan dinamik bilgi penceresi; her açılışta, modal açma/kapatmalarda, tıklandığında ve çıkış ekranında Minecraft açılış metinleri (splash text) gibi sürpriz bilgiler gösterir.
-*   **Güvenli Kapatma & Donma Koruması (v2.1):** Arayüzde "Programı Kapat" butonu, arka plan süreç kilitlenmesini engelleyen temiz süreç yönetimi ve ağ zaman aşımı (timeout) koruması.
+*   **Yedekleme Merkezi (v2.2):** Sol menüde özel 4. sekme! Google Drive'a tek tıkla anlık bulut yedeği alma, Drive'daki geçmiş yedekleri listeleme ve *Akıllı Eşleştirme* veya *Sıfırdan Değiştirme* seçenekleriyle anında geri yükleme.
+*   **Gelişmiş Yedekleme/Geri Yükleme (v2.2):** Geri yükleme öncesi önizleme (kaç kayıt eklenecek/güncellenecek/silinecek), otomatik güvenlik yedeği (Drive + cihazda), son 5 *anlık görüntüden tek tıkla geri alma*, yedek arama/filtre, Drive yedeğini indirme/silme, JSON içe aktarmada Eşle/Sıfırdan seçimi.
+*   **Düzenlenebilir Cihaz Tarihi (v2.2):** Cihaz eklerken varsayılan olarak anlık tarih ve saat otomatik gelir, istenirse takvimden geçmişe veya ileriye dönük serbestçe değiştirilebilir.
+*   **Tarihe Göre Arama ve Hızlı Filtreler (v2.2):** Başlangıç ve bitiş tarih aralığı seçici ile *Bugün, Bu Hafta, Bu Ay, Tümü* hızlı butonları.
+*   **Minecraft Tarzı Fun Fact Penceresi (v2.2):** Sol kenar çubuğunda ve Gösterge Paneli üstünde telefonlar ve otomobiller hakkında 30+ adet rastgele eğlenceli bilgi sunan dinamik bilgi penceresi; her açılışta, modal açma/kapatmalarda, tıklandığında ve çıkış ekranında Minecraft açılış metinleri (splash text) gibi sürpriz bilgiler gösterir.
+*   **Güvenli Kapatma & Donma Koruması (v2.2):** Arayüzde "Programı Kapat" butonu, arka plan süreç kilitlenmesini engelleyen temiz süreç yönetimi ve ağ zaman aşımı (timeout) koruması.
 *   **Ayarlar Paneli:** PIN değiştirme, veritabanı (Sheet) bağlantısına tek tık, günlük Drive yedeğini kurma/onarma ve çıkış.
 
 ## Dosyalar
 
 | Dosya | Açıklama |
 |---|---|
-| `KuzgunCRM_Kurulum.exe` | **Prod kurulum (tek dosya v2.1.0).** Her şey gömülü (sihirbaz + kaynak kodlar); çift tıkla çalışır, dosyaları açıp sihirbazı başlatır. |
+| `KuzgunCRM_Kurulum.exe` | **Prod kurulum (tek dosya v2.2.0).** Her şey gömülü (sihirbaz + kaynak kodlar); çift tıkla çalışır, dosyaları açıp sihirbazı başlatır. |
 | `KuzgunCRM_Kurulum.cmd` | Çift tıklayıcı alternatif (EXE üretilemezse kaynak klasörden çalışır). |
-| `Kuzgun_Iletisim_CRM.html` | Arayüz v2.1. Hem yerel dosya olarak (yerel mod) hem de Apps Script üzerinde (bulut modu) aynı dosya çalışır. |
+| `Kuzgun_Iletisim_CRM.html` | Arayüz v2.2. Hem yerel dosya olarak (yerel mod) hem de Apps Script üzerinde (bulut modu) aynı dosya çalışır. |
 | `Code.gs` | Google Apps Script backend: Google Sheets üzerinde CRUD, PIN doğrulama, eşzamanlılık kilidi, Drive yedek listeleme ve geri yükleme. |
 | `appsscript.json` | Apps Script manifesti (saat dilimi, V8, web uygulaması erişim ayarları). |
-| `Kurulum.ps1` | Sihirbazın kaynağı v2.1.0 (bilgilendirme + gereksinim + otomatik/manuel kurulum + temiz çıkış). |
-| `exe\` | EXE üretim kaynakları: `Program.cs` (gömücü/bootloader v2.1) + `Uret-Exe.ps1` (derleme betiği). |
+| `Kurulum.ps1` | Sihirbazın kaynağı v2.2.0 (bilgilendirme + gereksinim + otomatik/manuel kurulum + temiz çıkış). |
+| `exe\` | EXE üretim kaynakları: `Program.cs` (gömücü/bootloader v2.2) + `Uret-Exe.ps1` (derleme betiği). |
 
 ## Kurulum
 
@@ -35,7 +35,7 @@ Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşt
 En kolay yol: bu deponun **Releases** bölümünden veya doğrudan ana dizinden **`KuzgunCRM_Kurulum.exe`** dosyasını indirin ve **çift tıklayın**.
 
 Hiçbir soru sormadan tam otomatik olarak çalışır:
-* **Önceki Kurulum Algılama & Güncelleme:** Bilgisayarınızda (`%LOCALAPPDATA%\KuzgunCRM`) veya Google hesabınızda daha önce yapılmış bir kurulum varsa otomatik algılar; mevcut verilerinize dokunmadan yeni sürümü (v2.1.0) üzerine günceller.
+* **Önceki Kurulum Algılama & Güncelleme:** Bilgisayarınızda (`%LOCALAPPDATA%\KuzgunCRM`) veya Google hesabınızda daha önce yapılmış bir kurulum varsa otomatik algılar; mevcut verilerinize dokunmadan yeni sürümü (v2.2.0) üzerine günceller.
 * **Sıfırdan Kurulum:** İlk kez çalıştırılıyorsa gerekirse Node.js (winget / MSI ile sessizce) ve `clasp` aracını kurar, Google hesabınızla eşleşir, Apps Script projesini ve web yayınını otomatik oluşturur.
 * **İlk Girişte Otomatik Google Hesabı Eşleme:** Kurulum biter bitmez CRM tarayıcıda açılır, varsayılan PIN ile otomatik giriş yapar, Google hesabınızı (`Session`), E-Tablo veritabanınızı ve Günlük Drive Yedeğini (her gece 03:00) otomatik olarak eşler.
 
@@ -130,7 +130,7 @@ Derleme `.NET Framework`'ün `csc.exe`'siyle yapılır (her Windows'ta vardır; 
 
 EXE çalıştığında gömülü dosyaları `%LOCALAPPDATA%\KuzgunCRM\kaynak\` altına açar ve `Kurulum.ps1`'i Windows PowerShell ile başlatır; EXE'ye verilen tüm mod argümanları sihirbaza aynen iletilir, konsol UTF-8'e (`chcp 65001`) ayarlanır. Bu nedenle `Program.cs`/`Uret-Exe.ps1` değişikliklerinde EXE'yi yeniden üretmeyi unutmayın — sihirbaz kodu EXE'nin içindedir.
 
-## Masaüstü kısayolu ve dosyadan açılış (v2.1.1)
+## Masaüstü kısayolu ve dosyadan açılış (v2.2)
 - Kurulum, masaüstüne **Kuzgun CRM.lnk** (adresi gömülü yerel kopya) ve **Kuzgun CRM (Bulut).url** kısayollarını ekler; OneDrive masaüstünü de dener. Eski sürümün masaüstü/başlangıç dosyaları `%LOCALAPPDATA%\KuzgunCRM\eski_masaustu_*` klasörüne yedeklenip kaldırılır, eski 127.0.0.1 yerel sunucusu durdurulur.
 - HTML dosyası Apps Script dışında (çift tıklayarak) açılırsa **Bulut Bağlantı Sihirbazı** çıkar: `…/exec` adresi girilince varsayılan PIN ile Google hesabı otomatik eşlenir ve yedekleme/geri yükleme çalışır (`Code.gs` içindeki `doPost` JSON API'si üzerinden).
 - Testler: `node tests/e2e_file_mode.js`

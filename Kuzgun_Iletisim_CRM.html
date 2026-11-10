@@ -77,7 +77,7 @@
                         <div class="mb-1 text-yellow-400"><i class="fa-solid fa-hard-drive mr-1"></i> Yerel mod (bu cihaz)</div>
                         <a href="#" @click.prevent="openSetup" class="block mb-1 text-blue-300 underline hover:text-blue-200">Buluta bağlan</a>
                     </template>
-                    Kuzgun İletişim Yönetim Sistemi<br>v2.1.0
+                    Kuzgun İletişim Yönetim Sistemi<br>v2.2.0
                 </div>
             </aside>
 
@@ -1533,7 +1533,7 @@
                 async downloadDriveBackup(b) {
                     try {
                         const data = await Gas.call('getDriveBackup', [this.pinInput, b.id], 60000);
-                        const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), count: data.devices.length, devices: data.devices }, null, 2);
+                        const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.2.0', exported_at: new Date().toISOString(), count: data.devices.length, devices: data.devices }, null, 2);
                         this.saveFile(payload, b.name);
                         this.showToast(b.name + ' indirildi', 'ok');
                     } catch (e) {
@@ -1696,7 +1696,7 @@
                     setTimeout(() => URL.revokeObjectURL(url), 1000);
                 },
                 exportBackup() {
-                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), count: this.devices.length, devices: this.devices }, null, 2);
+                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.2.0', exported_at: new Date().toISOString(), count: this.devices.length, devices: this.devices }, null, 2);
                     this.saveFile(payload, 'kuzgun-crm-' + new Date().toISOString().slice(0, 10) + '.json');
                     this.showToast(this.devices.length + ' kayıt JSON olarak indirildi', 'ok');
                 },

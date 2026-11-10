@@ -7,11 +7,11 @@ using System.Resources;
 using System.Text;
 
 [assembly: AssemblyTitle("Kuzgun Iletisim CRM Kurulum")]
-[assembly: AssemblyDescription("Tek tikla kurulum ve yonetim sihirbazi - Kuzgun Iletisim CRM v2.1")]
+[assembly: AssemblyDescription("Tek tikla kurulum ve yonetim sihirbazi - Kuzgun Iletisim CRM v2.2")]
 [assembly: AssemblyProduct("Kuzgun Iletisim CRM")]
 [assembly: AssemblyCompany("Kuzgun Iletisim")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyVersion("2.2.0.0")]
+[assembly: AssemblyFileVersion("2.2.0.0")]
 [assembly: NeutralResourcesLanguage("tr-TR")]
 
 namespace KuzgunCrmSetup

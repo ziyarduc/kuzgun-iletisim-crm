@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 $Kaynak = $PSScriptRoot
 $Ana = Join-Path $env:LOCALAPPDATA 'KuzgunCRM'
 $Proje = Join-Path $Ana 'proje'
-$Surdur = 'v2.1.0'
+$Surdur = 'v2.2.0'
 function ConfigYol { return (Join-Path $Ana 'kurulum.json') }
 
 function Satir { param($renk, $metin) Write-Host $metin -ForegroundColor $renk }
@@ -565,7 +565,7 @@ function OtomatikCalistir {
         Baslik ('ONCEKI KURULUM ALGILANDI -> OTOMATIK GUNCELLENIYOR (' + $Surdur + ')')
         if ($onceki.Url) { Satir White ('    MEVCUT ADRES  : ' + $onceki.Url) }
         if ($onceki.ScriptId) { Satir White ('    PROJE KIMLIGI : ' + $onceki.ScriptId) }
-        Satir Cyan '    Mevcut verileriniz korunarak yeni surum (v2.1.0) uzerine yaziliyor...'
+        Satir Cyan '    Mevcut verileriniz korunarak yeni surum (v2.2.0) uzerine yaziliyor...'
     } else {
         Baslik ('TEK TIKLA OTOMATIK KURULUM BASLATILIYOR (' + $Surdur + ')')
         Satir Cyan '    Hicbir ek ayar gerektirmeden otomatik kurulum ve Google eslemesi yapiliyor...'

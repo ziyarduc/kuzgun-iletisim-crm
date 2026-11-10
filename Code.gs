@@ -272,7 +272,7 @@ function crmStatus(pin) {
     dailyBackupActive: hasDaily,
     accountEmail: ownerEmail || props.getProperty('SYNCED_GOOGLE_ACCOUNT') || '',
     activeUserEmail: activeEmail || ownerEmail || '',
-    version: '2.1.0',
+    version: '2.2.0',
     updated: rows.reduce(function (m, r) {
       return Math.max(m, Number(r.updated_at) || 0);
     }, 0)
@@ -350,7 +350,7 @@ function runBackup_(instant, prefix) {
     var same = folder.getFilesByName(name);
     while (same.hasNext()) same.next().setTrashed(true);
   }
-  var json = JSON.stringify({ app: 'kuzgun-crm', version: '2.1.0', exported_at: new Date().toISOString(), count: data.length, devices: data }, null, 2);
+  var json = JSON.stringify({ app: 'kuzgun-crm', version: '2.2.0', exported_at: new Date().toISOString(), count: data.length, devices: data }, null, 2);
   var created = folder.createFile(name, json, MimeType.PLAIN_TEXT);
   try { created.setDescription(JSON.stringify({ count: data.length })); } catch (e) {}
 
