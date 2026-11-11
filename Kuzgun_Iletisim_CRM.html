@@ -77,7 +77,7 @@
                         <div class="mb-1 text-yellow-400"><i class="fa-solid fa-hard-drive mr-1"></i> Yerel mod (bu cihaz)</div>
                         <a href="#" @click.prevent="openSetup" class="block mb-1 text-blue-300 underline hover:text-blue-200">Buluta bağlan</a>
                     </template>
-                    Kuzgun İletişim Yönetim Sistemi<br>v2.2.0
+                    Kuzgun İletişim Yönetim Sistemi<br>v2.3.0
                 </div>
             </aside>
 
@@ -777,6 +777,7 @@
 
         const LOCAL_DATA_KEY = 'kuzgun_crm_data_v2';
         const LOCAL_LEGACY_KEY = 'kuzgun_crm_data';
+        const PREMIGRATE_BACKUP_KEY = 'kuzgun_crm_backup_premigrate';
         const PIN_KEY = 'kuzgun_crm_pin';
         const QUEUE_KEY = 'kuzgun_crm_queue_v1';
         const SNAP_KEY = 'kuzgun_crm_snapshots_v1';
@@ -798,6 +799,8 @@
         const CLOUD_URL_KEY = 'kuzgun_crm_url';
         // Kurulum sihirbazi masaustune kopyaladigi dosyada tirnaklarin icine web adresini yazar.
         const EMBED_URL = '';
+        // Kurulum sihirbazi veya veri migrasyon motoru eski kayitlari bu diziye gomulu olarak enjekte edebilir.
+        const EMBED_DEVICES = [];
 
         function isExecUrl(u) {
             return /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[\w-]+\/exec\/?$/.test(String(u || '').trim());
@@ -1214,18 +1217,70 @@
                     ];
                 },
                 loadLocal() {
-                    let raw = null;
-                    try { raw = localStorage.getItem(LOCAL_DATA_KEY); } catch (e) {}
-                    if (raw) {
-                        try { this.devices = JSON.parse(raw) || []; } catch (e) { this.devices = []; }
-                        return;
+                    let rawV2 = null;
+                    let rawLegacy = null;
+                    try { rawV2 = localStorage.getItem(LOCAL_DATA_KEY); } catch (e) {}
+                    try { rawLegacy = localStorage.getItem(LOCAL_LEGACY_KEY); } catch (e) {}
+
+                    // Pre-migration backup: keep an intact snapshot of pre-migration state if any local data exists
+                    try {
+                        if (!localStorage.getItem(PREMIGRATE_BACKUP_KEY) && (rawV2 !== null || rawLegacy !== null)) {
+                            localStorage.setItem(PREMIGRATE_BACKUP_KEY, JSON.stringify({
+                                saved_at: Date.now(),
+                                raw_v2: rawV2,
+                                raw_legacy: rawLegacy
+                            }));
+                        }
+                    } catch (e) {}
+
+                    let listV2 = [];
+                    if (rawV2) {
+                        try {
+                            const parsed = JSON.parse(rawV2);
+                            listV2 = Array.isArray(parsed) ? parsed : (parsed && parsed.devices) || [];
+                        } catch (e) {
+                            listV2 = [];
+                        }
                     }
-                    let oldRaw = null;
-                    try { oldRaw = localStorage.getItem(LOCAL_LEGACY_KEY); } catch (e) {}
-                    if (oldRaw) {
-                        try { this.devices = JSON.parse(oldRaw) || []; } catch (e) { this.devices = []; }
+
+                    let listLegacy = [];
+                    if (rawLegacy) {
+                        try {
+                            const parsed = JSON.parse(rawLegacy);
+                            listLegacy = Array.isArray(parsed) ? parsed : (parsed && parsed.devices) || [];
+                        } catch (e) {
+                            listLegacy = [];
+                        }
+                    }
+
+                    const normV2 = this.normalizeDevices(listV2);
+                    const normLegacy = this.normalizeDevices(listLegacy);
+                    const normEmbed = (typeof EMBED_DEVICES !== 'undefined' && Array.isArray(EMBED_DEVICES))
+                        ? this.normalizeDevices(EMBED_DEVICES)
+                        : [];
+
+                    // Merge by id preserving existing records:
+                    // Priority / baseline: normLegacy -> normEmbed -> normV2
+                    // (normV2 represents existing user records in current version, so it takes precedence over embed/legacy on ID collision)
+                    const mergedMap = {};
+                    normLegacy.forEach(d => { mergedMap[String(d.id)] = d; });
+                    normEmbed.forEach(d => { mergedMap[String(d.id)] = d; });
+                    normV2.forEach(d => { mergedMap[String(d.id)] = d; });
+
+                    const mergedList = Object.values(mergedMap);
+
+                    const hadUserData = (rawV2 !== null && normV2.length > 0) ||
+                                        (rawLegacy !== null && normLegacy.length > 0) ||
+                                        normEmbed.length > 0;
+
+                    if (hadUserData || mergedList.length > 0) {
+                        this.devices = mergedList;
                         this.cacheLocal();
+                    } else if (rawV2 !== null && normV2.length === 0) {
+                        // User explicitly emptied their database
+                        this.devices = [];
                     } else {
+                        // Truly fresh install without user data or embedded data
                         this.devices = this.demoDevices();
                         this.cacheLocal();
                     }
@@ -1533,7 +1588,7 @@
                 async downloadDriveBackup(b) {
                     try {
                         const data = await Gas.call('getDriveBackup', [this.pinInput, b.id], 60000);
-                        const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.2.0', exported_at: new Date().toISOString(), count: data.devices.length, devices: data.devices }, null, 2);
+                        const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.3.0', exported_at: new Date().toISOString(), count: data.devices.length, devices: data.devices }, null, 2);
                         this.saveFile(payload, b.name);
                         this.showToast(b.name + ' indirildi', 'ok');
                     } catch (e) {
@@ -1554,13 +1609,136 @@
                     const seen = {};
                     const out = [];
                     (list || []).forEach(d => {
-                        if (!d || d.id === undefined || d.id === null || d.id === '') return;
-                        const k = String(d.id);
+                        if (!d || typeof d !== 'object') return;
+                        const rawId = d.id !== undefined && d.id !== null ? d.id
+                            : (d._id !== undefined && d._id !== null ? d._id
+                            : (d.device_id !== undefined && d.device_id !== null ? d.device_id
+                            : (d.kayit_id !== undefined && d.kayit_id !== null ? d.kayit_id : d.no)));
+                        if (rawId === undefined || rawId === null || rawId === '') return;
+                        const k = String(rawId);
                         if (seen[k]) return;
                         seen[k] = true;
-                        const c = { ...d };
-                        c.updated_at = Number(c.updated_at) || Date.now();
-                        c.created_at = Number(c.created_at) || c.updated_at;
+
+                        // Type normalization
+                        let type = d.type || d.tur || d.record_type || d.islem_turu || d.category || '';
+                        const tLower = String(type).toLowerCase().trim();
+                        if (tLower === 'tamir' || tLower === 'servis' || tLower === 'repair' || tLower === 'service') {
+                            type = 'REPAIR';
+                        } else if (tLower === 'satis' || tLower === 'satış' || tLower === 'alim' || tLower === 'alım' || tLower === 'stok' || tLower === 'sale' || tLower === 'inventory' || tLower === 'stock') {
+                            type = 'SALE';
+                        }
+
+                        // Status normalization
+                        let status = d.status || d.durum || d.state || '';
+                        const sLower = String(status).toLowerCase().trim();
+                        if (sLower === 'bekliyor' || sLower === 'beklemede' || sLower === 'pending' || sLower === 'yeni') {
+                            status = 'PENDING';
+                        } else if (sLower === 'islemde' || sLower === 'işlemde' || sLower === 'tamirde' || sLower === 'in_progress' || sLower === 'processing') {
+                            status = 'IN_PROGRESS';
+                        } else if (sLower === 'tamamlandi' || sLower === 'tamamlandı' || sLower === 'hazir' || sLower === 'hazır' || sLower === 'completed' || sLower === 'done') {
+                            status = 'COMPLETED';
+                        } else if (sLower === 'teslim' || sLower === 'teslim_edildi' || sLower === 'teslim edildi' || sLower === 'delivered') {
+                            status = 'DELIVERED';
+                        } else if (sLower === 'stokta' || sLower === 'satilik' || sLower === 'satılık' || sLower === 'in_stock' || sLower === 'available') {
+                            status = 'IN_STOCK';
+                        } else if (sLower === 'satildi' || sLower === 'satıldı' || sLower === 'sold') {
+                            status = 'SOLD';
+                        }
+
+                        // Infer type from status if still missing
+                        if (!type) {
+                            if (status === 'IN_STOCK' || status === 'SOLD') type = 'SALE';
+                            else type = 'REPAIR';
+                        }
+                        if (!status) {
+                            status = type === 'SALE' ? 'IN_STOCK' : 'PENDING';
+                        }
+
+                        const brand = d.brand || d.marka || d.device_brand || d.cihaz_marka || '';
+                        const model = d.model || d.cihaz_model || d.device_model || d.cihaz || '';
+                        const imei = d.imei || d.imei_no || d.imeiNumber || '';
+                        const serialNumber = d.serial_number || d.serialNumber || d.seri_no || d.seriNo || d.serial || '';
+                        const customerName = d.customer_name || d.customerName || d.musteri_adi || d.musteri || d.customer || d.ad_soyad || d.full_name || '';
+                        const customerPhone = d.customer_phone || d.customerPhone || d.musteri_tel || d.telefon || d.phone || d.tel || '';
+                        const operations = d.operations_performed || d.operations || d.yapilan_islemler || d.yapilan_islem || d.islem || d.problem || d.ariza || d.issue || d.description || '';
+
+                        // Notes & Password extraction
+                        let notes = d.notes || d.notlar || d.aciklama || '';
+                        const sifre = d.sifre !== undefined && d.sifre !== null ? String(d.sifre).trim()
+                            : (d.password !== undefined && d.password !== null ? String(d.password).trim()
+                            : (d.device_password !== undefined && d.device_password !== null ? String(d.device_password).trim() : ''));
+                        if (sifre && !String(notes).includes(sifre)) {
+                            notes = notes ? (notes + ' (Şifre: ' + sifre + ')') : ('Şifre: ' + sifre);
+                        }
+
+                        // Price normalization
+                        let price = d.price !== undefined && d.price !== null ? d.price
+                            : (d.fiyat !== undefined && d.fiyat !== null ? d.fiyat
+                            : (d.ucret !== undefined && d.ucret !== null ? d.ucret
+                            : (d.cost !== undefined && d.cost !== null ? d.cost
+                            : (d.amount !== undefined && d.amount !== null ? d.amount : d.tutar))));
+                        if (typeof price === 'string') {
+                            let cleaned = price.replace(/[₺TLtl\s]/g, '').trim();
+                            if (cleaned.includes('.') && cleaned.includes(',')) {
+                                // Turkish style: 1.250,50 -> 1250.50
+                                cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+                            } else if (cleaned.includes(',')) {
+                                // 1250,50 -> 1250.50
+                                cleaned = cleaned.replace(',', '.');
+                            } else if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+                                // Turkish thousands separator without decimals: e.g. 18.500 -> 18500
+                                cleaned = cleaned.replace(/\./g, '');
+                            }
+                            const num = parseFloat(cleaned);
+                            price = isNaN(num) ? null : num;
+                        } else if (typeof price === 'number') {
+                            price = isNaN(price) ? null : price;
+                        } else {
+                            price = null;
+                        }
+
+                        // Timestamps normalization
+                        const rawCreated = d.created_at !== undefined && d.created_at !== null ? d.created_at
+                            : (d.createdAt !== undefined && d.createdAt !== null ? d.createdAt
+                            : (d.tarih !== undefined && d.tarih !== null ? d.tarih
+                            : (d.date !== undefined && d.date !== null ? d.date : d.kayit_tarihi)));
+                        let createdNum = Number(rawCreated);
+                        if (isNaN(createdNum) && typeof rawCreated === 'string' && rawCreated.trim()) {
+                            const parsedDate = Date.parse(rawCreated);
+                            if (!isNaN(parsedDate)) createdNum = parsedDate;
+                        }
+                        if (createdNum && createdNum < 1e11) createdNum = createdNum * 1000;
+
+                        const rawUpdated = d.updated_at !== undefined && d.updated_at !== null ? d.updated_at
+                            : (d.updatedAt !== undefined && d.updatedAt !== null ? d.updatedAt : null);
+                        let updatedNum = Number(rawUpdated);
+                        if (isNaN(updatedNum) && typeof rawUpdated === 'string' && rawUpdated.trim()) {
+                            const parsedDate = Date.parse(rawUpdated);
+                            if (!isNaN(parsedDate)) updatedNum = parsedDate;
+                        }
+                        if (updatedNum && updatedNum < 1e11) updatedNum = updatedNum * 1000;
+
+                        const now = Date.now();
+                        const finalUpdated = updatedNum || createdNum || now;
+                        const finalCreated = createdNum || finalUpdated;
+
+                        const c = {
+                            ...d,
+                            id: isNaN(Number(rawId)) ? rawId : Number(rawId),
+                            type: type || 'REPAIR',
+                            status: status || 'PENDING',
+                            brand: brand,
+                            model: model,
+                            imei: imei,
+                            serial_number: serialNumber,
+                            customer_name: customerName,
+                            customer_phone: customerPhone,
+                            operations_performed: operations,
+                            notes: notes,
+                            price: price,
+                            created_at: finalCreated,
+                            updated_at: finalUpdated
+                        };
                         out.push(c);
                     });
                     return out;
@@ -1668,11 +1846,16 @@
                 },
                 async installBackup() {
                     try {
-                        await Gas.call('setupDailyBackup', []);
+                        await Gas.call('setupDailyBackup', [this.pinInput || '']);
                         if (this.statusInfo) this.statusInfo.dailyBackupActive = true;
                         this.showToast('Günlük Drive yedeği kuruldu / aktifleştirildi (03:00)', 'ok');
                     } catch (e) {
-                        this.showToast('Kurulum hatası: ' + String((e && e.message) || e), 'error');
+                        const m = String((e && e.message) || e);
+                        if (m.indexOf('NO_BACKEND') !== -1) {
+                            this.showToast('Bulut bağlantısı yok. Lütfen önce Google hesabınızı bağlayın.', 'error');
+                        } else {
+                            this.showToast('Kurulum hatası: ' + this.errText(e), 'error');
+                        }
                     }
                 },
                 signOut() {
@@ -1696,7 +1879,7 @@
                     setTimeout(() => URL.revokeObjectURL(url), 1000);
                 },
                 exportBackup() {
-                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.2.0', exported_at: new Date().toISOString(), count: this.devices.length, devices: this.devices }, null, 2);
+                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.3.0', exported_at: new Date().toISOString(), count: this.devices.length, devices: this.devices }, null, 2);
                     this.saveFile(payload, 'kuzgun-crm-' + new Date().toISOString().slice(0, 10) + '.json');
                     this.showToast(this.devices.length + ' kayıt JSON olarak indirildi', 'ok');
                 },

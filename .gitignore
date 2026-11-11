@@ -5,3 +5,4 @@ kurulum.json
 kurulum.log
 *.log
 exe/fail.png
+.agents/

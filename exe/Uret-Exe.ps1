@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
   Kuzgun CRM - prod exe uretimi
   Usage:  powershell -ExecutionPolicy Bypass -File exe\Uret-Exe.ps1 [-TestiAtla]
@@ -105,7 +105,8 @@ $exeOut = Join-Path $root 'KuzgunCRM_Kurulum.exe'
 Push-Location $exeDir
 try {
     $cscArgs = @(
-        '/nologo', '/target:exe', '/platform:anycpu', '/optimize+',
+        '/nologo', '/target:winexe', '/platform:anycpu', '/optimize+',
+        '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll',
         '/main:KuzgunCrmSetup.Program',
         '/win32icon:kuzgun.ico',
         '/out:..\KuzgunCRM_Kurulum.exe',

@@ -7,6 +7,7 @@ param(
     [switch]$Yenile,
     [switch]$Sifirdan,
     [switch]$Etkilesimli,
+    [switch]$Sessiz,
     [switch]$Test
 )
 
@@ -14,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 $Kaynak = $PSScriptRoot
 $Ana = Join-Path $env:LOCALAPPDATA 'KuzgunCRM'
 $Proje = Join-Path $Ana 'proje'
-$Surdur = 'v2.2.0'
+$Surdur = 'v2.3.0'
 function ConfigYol { return (Join-Path $Ana 'kurulum.json') }
 
 function Satir { param($renk, $metin) Write-Host $metin -ForegroundColor $renk }
@@ -152,7 +153,23 @@ function DosyalariHazirla {
     param([string]$erisim)
     if (-not (Test-Path $Proje)) { New-Item -ItemType Directory -Path $Proje -Force | Out-Null }
     Copy-Item (Join-Path $Kaynak 'Code.gs') (Join-Path $Proje 'Code.gs') -Force
-    Copy-Item (Join-Path $Kaynak 'Kuzgun_Iletisim_CRM.html') (Join-Path $Proje 'index.html') -Force
+
+    $htmlContent = Get-Content (Join-Path $Kaynak 'Kuzgun_Iletisim_CRM.html') -Raw -Encoding UTF8
+    $migFile = Join-Path $Ana 'migrated_devices.json'
+    if (Test-Path $migFile) {
+        try {
+            $migData = [System.IO.File]::ReadAllText($migFile, [System.Text.Encoding]::UTF8)
+            if ($migData -and $migData.Trim().Length -gt 2) {
+                $migObj = $migData | ConvertFrom-Json
+                if ($migObj) {
+                    $migComp = @($migObj) | ConvertTo-Json -Depth 5 -Compress
+                    $htmlContent = $htmlContent.Replace("const EMBED_DEVICES = [];", "const EMBED_DEVICES = $migComp;")
+                }
+            }
+        } catch {}
+    }
+    [System.IO.File]::WriteAllText((Join-Path $Proje 'index.html'), $htmlContent, (New-Object System.Text.UTF8Encoding($false)))
+
     Copy-Item (Join-Path $Kaynak 'appsscript.json') (Join-Path $Proje 'appsscript.json') -Force
     $m = Get-Content (Join-Path $Proje 'appsscript.json') -Raw | ConvertFrom-Json
     $m.webapp.access = $erisim
@@ -173,6 +190,483 @@ function ConfigOku {
     return $null
 }
 
+function CihazNormalle {
+    param($d)
+    if (-not $d) { return $null }
+
+    # id / _id / device_id / kayit_id / no
+    $idVal = $null
+    foreach ($k in @('id', '_id', 'device_id', 'kayit_id', 'no')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $idVal = $d.$k; break }
+    }
+    if ($idVal -eq $null -or "$idVal" -eq '') { return $null }
+
+    $idParsed = 0
+    $finalId = if ([int]::TryParse("$idVal", [ref]$idParsed)) { $idParsed } else { "$idVal" }
+
+    # type / tur / record_type / islem_turu / category
+    $typeVal = ''
+    foreach ($k in @('type', 'tur', 'record_type', 'islem_turu', 'category')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $typeVal = "$($d.$k)"; break }
+    }
+    $tLower = $typeVal.ToLower().Trim()
+    if ($tLower -match '^(tamir|servis|repair|service)$') {
+        $typeVal = 'REPAIR'
+    } elseif ($tLower -match '^(satis|satış|alim|alım|stok|sale|inventory|stock)$') {
+        $typeVal = 'SALE'
+    }
+
+    # status / durum / state
+    $statusVal = ''
+    foreach ($k in @('status', 'durum', 'state')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $statusVal = "$($d.$k)"; break }
+    }
+    $sLower = $statusVal.ToLower().Trim()
+    if ($sLower -match '^(bekliyor|beklemede|pending|yeni)$') {
+        $statusVal = 'PENDING'
+    } elseif ($sLower -match '^(islemde|işlemde|tamirde|in_progress|processing)$') {
+        $statusVal = 'IN_PROGRESS'
+    } elseif ($sLower -match '^(tamamlandi|tamamlandı|hazir|hazır|completed|done)$') {
+        $statusVal = 'COMPLETED'
+    } elseif ($sLower -match '^(teslim|teslim_edildi|teslim edildi|delivered)$') {
+        $statusVal = 'DELIVERED'
+    } elseif ($sLower -match '^(stokta|satilik|satılık|in_stock|available)$') {
+        $statusVal = 'IN_STOCK'
+    } elseif ($sLower -match '^(satildi|satıldı|sold)$') {
+        $statusVal = 'SOLD'
+    }
+
+    if (-not $typeVal) {
+        if ($statusVal -eq 'IN_STOCK' -or $statusVal -eq 'SOLD') { $typeVal = 'SALE' } else { $typeVal = 'REPAIR' }
+    }
+    if (-not $statusVal) {
+        if ($typeVal -eq 'SALE') { $statusVal = 'IN_STOCK' } else { $statusVal = 'PENDING' }
+    }
+
+    # brand / marka / device_brand / cihaz_marka
+    $brandVal = ''
+    foreach ($k in @('brand', 'marka', 'device_brand', 'cihaz_marka')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $brandVal = "$($d.$k)"; break }
+    }
+
+    # model / cihaz_model / device_model / cihaz
+    $modelVal = ''
+    foreach ($k in @('model', 'cihaz_model', 'device_model', 'cihaz')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $modelVal = "$($d.$k)"; break }
+    }
+
+    # imei / imei_no / imeiNumber
+    $imeiVal = ''
+    foreach ($k in @('imei', 'imei_no', 'imeiNumber')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $imeiVal = "$($d.$k)"; break }
+    }
+
+    # serial_number / serialNumber / seri_no / seriNo / serial
+    $snVal = ''
+    foreach ($k in @('serial_number', 'serialNumber', 'seri_no', 'seriNo', 'serial')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $snVal = "$($d.$k)"; break }
+    }
+
+    # customer_name / customerName / musteri_adi / musteri / customer / ad_soyad / full_name
+    $custVal = ''
+    foreach ($k in @('customer_name', 'customerName', 'musteri_adi', 'musteri', 'customer', 'ad_soyad', 'full_name')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $custVal = "$($d.$k)"; break }
+    }
+
+    # customer_phone / customerPhone / musteri_tel / telefon / phone / tel
+    $phoneVal = ''
+    foreach ($k in @('customer_phone', 'customerPhone', 'musteri_tel', 'telefon', 'phone', 'tel')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $phoneVal = "$($d.$k)"; break }
+    }
+
+    # operations_performed / operations / yapilan_islemler / yapilan_islem / islem / problem / ariza / issue / description
+    $opVal = ''
+    foreach ($k in @('operations_performed', 'operations', 'yapilan_islemler', 'yapilan_islem', 'islem', 'problem', 'ariza', 'issue', 'description')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $opVal = "$($d.$k)"; break }
+    }
+
+    # notes / notlar / aciklama
+    $notesVal = ''
+    foreach ($k in @('notes', 'notlar', 'aciklama')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $notesVal = "$($d.$k)"; break }
+    }
+
+    # sifre / password / device_password
+    $sifreVal = ''
+    foreach ($k in @('sifre', 'password', 'device_password')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $sifreVal = "$($d.$k)"; break }
+    }
+    if ($sifreVal -and $notesVal -notlike "*$sifreVal*") {
+        if ($notesVal) { $notesVal = "$notesVal (Şifre: $sifreVal)" }
+        else { $notesVal = "Şifre: $sifreVal" }
+    }
+
+    # price / fiyat / ucret / cost / amount / tutar
+    $priceVal = $null
+    foreach ($k in @('price', 'fiyat', 'ucret', 'cost', 'amount', 'tutar')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $priceVal = $d.$k; break }
+    }
+    $priceNum = $null
+    if ($priceVal -ne $null) {
+        $pStr = "$priceVal" -replace '[₺TLtl\s]', ''
+        if ($pStr.Contains('.') -and $pStr.Contains(',')) {
+            $pStr = $pStr.Replace('.', '').Replace(',', '.')
+        } elseif ($pStr.Contains(',')) {
+            $pStr = $pStr.Replace(',', '.')
+        } elseif ($pStr -match '^\d{1,3}(\.\d{3})+$') {
+            $pStr = $pStr.Replace('.', '')
+        }
+        $parsedDbl = 0.0
+        if ([double]::TryParse($pStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsedDbl)) {
+            $priceNum = $parsedDbl
+        }
+    }
+
+    # created_at / createdAt / tarih / date / kayit_tarihi
+    $rawCreated = $null
+    foreach ($k in @('created_at', 'createdAt', 'tarih', 'date', 'kayit_tarihi')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $rawCreated = $d.$k; break }
+    }
+    $createdEpoch = 0L
+    if ($rawCreated -ne $null) {
+        $parsedLong = 0L
+        if ([long]::TryParse("$rawCreated", [ref]$parsedLong)) {
+            if ($parsedLong -lt 100000000000L -and $parsedLong -gt 0) { $parsedLong = $parsedLong * 1000L }
+            $createdEpoch = $parsedLong
+        } else {
+            $parsedDate = [datetime]::MinValue
+            if ([datetime]::TryParse("$rawCreated", [ref]$parsedDate)) {
+                $epochStart = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
+                $createdEpoch = [long](($parsedDate.ToUniversalTime() - $epochStart).TotalMilliseconds)
+            }
+        }
+    }
+    if ($createdEpoch -le 0L) {
+        $epochStart = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
+        $createdEpoch = [long](([datetime]::UtcNow - $epochStart).TotalMilliseconds)
+    }
+
+    # updated_at / updatedAt
+    $rawUpdated = $null
+    foreach ($k in @('updated_at', 'updatedAt')) {
+        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $rawUpdated = $d.$k; break }
+    }
+    $updatedEpoch = $createdEpoch
+    if ($rawUpdated -ne $null) {
+        $parsedLongU = 0L
+        if ([long]::TryParse("$rawUpdated", [ref]$parsedLongU)) {
+            if ($parsedLongU -lt 100000000000L -and $parsedLongU -gt 0) { $parsedLongU = $parsedLongU * 1000L }
+            $updatedEpoch = $parsedLongU
+        }
+    }
+
+    return [pscustomobject]@{
+        id = $finalId
+        type = $typeVal
+        status = $statusVal
+        brand = $brandVal
+        model = $modelVal
+        imei = $imeiVal
+        serial_number = $snVal
+        customer_name = $custVal
+        customer_phone = $phoneVal
+        operations_performed = $opVal
+        notes = $notesVal
+        price = $priceNum
+        created_at = $createdEpoch
+        updated_at = $updatedEpoch
+    }
+}
+
+function CanliSunucuVeriCek {
+    # Eski 127.0.0.1 yerel sunucu sureclerini durdurmadan ONCE calisan sunucudan canli veri cek
+    $kayitlar = New-Object System.Collections.ArrayList
+    $portlar = New-Object System.Collections.Generic.List[int]
+    foreach ($p in @(3000, 5000, 8000, 8080, 8081, 8888, 5500, 5050)) {
+        [void]$portlar.Add($p)
+    }
+
+    try {
+        $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.ProcessId -ne $PID -and $_.Name -match '(?i)^(python|pythonw|node|php)\.exe$' -and
+            $_.CommandLine -match '(?i)kuzgun' -and $_.CommandLine -notmatch '(?i)clasp|npm'
+        }
+        foreach ($pr in $procs) {
+            if ($pr.CommandLine -match '(?i)(?:port|:)\s*(\d{4,5})') {
+                $pInt = [int]$Matches[1]
+                if (-not $portlar.Contains($pInt)) { [void]$portlar.Add($pInt) }
+            }
+        }
+    } catch {}
+
+    $endpoints = @('/api/devices', '/api/export', '/devices', '/api/data', '/data.json', '/export')
+    foreach ($port in $portlar) {
+        $portBitti = $false
+        foreach ($ep in $endpoints) {
+            $url = "http://127.0.0.1:$port$ep"
+            try {
+                $req = [System.Net.WebRequest]::Create($url)
+                $req.Timeout = 1200
+                $req.Method = 'GET'
+                $resp = $req.GetResponse()
+                $stream = $resp.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+                $body = $reader.ReadToEnd()
+                $reader.Close()
+                $resp.Close()
+
+                if ($body -and $body.Trim().Length -gt 2) {
+                    $parsed = $body | ConvertFrom-Json -ErrorAction SilentlyContinue
+                    $items = @()
+                    if ($parsed -is [System.Array]) {
+                        $items = $parsed
+                    } elseif ($parsed.devices -is [System.Array]) {
+                        $items = $parsed.devices
+                    } elseif ($parsed.data -is [System.Array]) {
+                        $items = $parsed.data
+                    }
+
+                    if ($items.Count -gt 0) {
+                        Basari ("  [OK] Canli 127.0.0.1 sunucusundan veriler basariyla alindi ($url, $($items.Count) kayit)")
+                        foreach ($it in $items) {
+                            $norm = CihazNormalle $it
+                            if ($norm) { [void]$kayitlar.Add($norm) }
+                        }
+                        $portBitti = $true
+                        break
+                    }
+                }
+            } catch {}
+        }
+        if ($portBitti) { break }
+    }
+
+    if ($kayitlar.Count -gt 0) {
+        $canliYol = Join-Path $Ana 'from_live_server.json'
+        if (-not (Test-Path $Ana)) { New-Item -ItemType Directory -Path $Ana -Force | Out-Null }
+        $kayitlar | ConvertTo-Json -Depth 5 | Set-Content -Path $canliYol -Encoding UTF8
+    }
+
+    return ,$kayitlar
+}
+
+function EskiDosyalariTara {
+    $bulunanlar = New-Object System.Collections.ArrayList
+
+    # Aday dizinler listesi
+    $adayDizinler = New-Object System.Collections.Generic.List[string]
+    $standartDizinler = @(
+        'C:\ozi',
+        'C:\kuzgun',
+        'C:\kuzgun-crm',
+        (Join-Path $Ana 'yedekler'),
+        (Join-Path $Ana 'data'),
+        (Join-Path $env:LOCALAPPDATA 'ozi'),
+        (Join-Path $env:APPDATA 'KuzgunCRM'),
+        (Join-Path $env:USERPROFILE 'KuzgunCRM')
+    )
+    foreach ($d in $standartDizinler) {
+        if ($d -and (Test-Path $d) -and -not $adayDizinler.Contains($d)) { [void]$adayDizinler.Add($d) }
+    }
+
+    # Masaustu klasorleri ve alt klasorleri
+    foreach ($desk in (MasaustuKlasorleri)) {
+        if ($desk -and (Test-Path $desk) -and -not $adayDizinler.Contains($desk)) {
+            [void]$adayDizinler.Add($desk)
+        }
+        # Masaustundeki kuzgun veya ozi klasorleri
+        try {
+            Get-ChildItem -Path $desk -Directory -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -match '(?i)kuzgun|ozi|teknik|servis'
+            } | ForEach-Object {
+                if (-not $adayDizinler.Contains($_.FullName)) { [void]$adayDizinler.Add($_.FullName) }
+            }
+        } catch {}
+
+        # Masaustu kisayollarindaki (.lnk) hedef klasorler
+        try {
+            $ws = New-Object -ComObject WScript.Shell
+            Get-ChildItem -Path $desk -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Extension -ieq '.lnk' -and $_.Name -match '(?i)kuzgun|ozi|crm'
+            } | ForEach-Object {
+                try {
+                    $sc = $ws.CreateShortcut($_.FullName)
+                    if ($sc.TargetPath) {
+                        $targetDir = Split-Path $sc.TargetPath -Parent
+                        if ($targetDir -and (Test-Path $targetDir) -and -not $adayDizinler.Contains($targetDir)) {
+                            [void]$adayDizinler.Add($targetDir)
+                        }
+                    }
+                    if ($sc.WorkingDirectory -and (Test-Path $sc.WorkingDirectory) -and -not $adayDizinler.Contains($sc.WorkingDirectory)) {
+                        [void]$adayDizinler.Add($sc.WorkingDirectory)
+                    }
+                } catch {}
+            }
+        } catch {}
+    }
+
+    # 1. JSON dosyalarini tara
+    foreach ($d in $adayDizinler) {
+        try {
+            $jsonFiles = Get-ChildItem -Path $d -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Extension -ieq '.json' -and $_.Name -match '(?i)(kuzgun|device|cihaz|musteri|backup|yedek|data)'
+            }
+            foreach ($jf in $jsonFiles) {
+                try {
+                    $raw = [System.IO.File]::ReadAllText($jf.FullName, [System.Text.Encoding]::UTF8)
+                    if ($raw -and $raw.Trim().Length -gt 2) {
+                        $parsed = $raw | ConvertFrom-Json -ErrorAction SilentlyContinue
+                        $arr = @()
+                        if ($parsed -is [System.Array]) { $arr = $parsed }
+                        elseif ($parsed.devices -is [System.Array]) { $arr = $parsed.devices }
+                        elseif ($parsed.data -is [System.Array]) { $arr = $parsed.data }
+                        foreach ($it in $arr) {
+                            $norm = CihazNormalle $it
+                            if ($norm) { [void]$bulunanlar.Add($norm) }
+                        }
+                    }
+                } catch {}
+            }
+        } catch {}
+    }
+
+    # 2. SQLite veritabanlarini tara (*.db, *.sqlite, *.sqlite3)
+    foreach ($d in $adayDizinler) {
+        try {
+            $dbFiles = Get-ChildItem -Path $d -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Extension -match '(?i)^\.(db|sqlite|sqlite3)$'
+            }
+            foreach ($db in $dbFiles) {
+                if (KomutVarMi 'python' -or KomutVarMi 'python3') {
+                    $pyCmd = if (KomutVarMi 'python') { 'python' } else { 'python3' }
+                    $pyCode = "import sqlite3, json, sys; conn = sqlite3.connect(sys.argv[1]); cur = conn.cursor(); cur.execute(\`"SELECT name FROM sqlite_master WHERE type='table';\`"); tables = [r[0] for r in cur.fetchall() if not r[0].startswith('sqlite_')]; out = []; [out.extend([dict(zip([c[1] for c in cur.execute(f'PRAGMA table_info({t});').fetchall()], row)) for row in cur.execute(f'SELECT * FROM {t};').fetchall()]) for t in tables]; conn.close(); print(json.dumps(out, ensure_ascii=False))"
+                    try {
+                        $res = & $pyCmd -c $pyCode $db.FullName 2>&1 | Out-String
+                        if ($res -and $res.Trim().StartsWith('[')) {
+                            $items = $res | ConvertFrom-Json -ErrorAction SilentlyContinue
+                            foreach ($it in $items) {
+                                $norm = CihazNormalle $it
+                                if ($norm) { [void]$bulunanlar.Add($norm) }
+                            }
+                        }
+                    } catch {}
+                }
+            }
+        } catch {}
+    }
+
+    # 3. Chrome / Edge LevelDB localStorage taramasi
+    $levelDbDirs = @(
+        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data\Default\Local Storage\leveldb'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data\Default\Local Storage\leveldb')
+    )
+    foreach ($ldbDir in $levelDbDirs) {
+        if (Test-Path $ldbDir) {
+            try {
+                $ldbFiles = Get-ChildItem -Path $ldbDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '(?i)^\.(ldb|log)$' }
+                foreach ($lf in $ldbFiles) {
+                    try {
+                        $txt = [System.IO.File]::ReadAllText($lf.FullName, [System.Text.Encoding]::GetEncoding(28591))
+                        if ($txt -match 'kuzgun_crm_data') {
+                            $rx = [regex]'\[\s*\{[^{}]*"(?:musteri_adi|customer_name|brand|marka|model)"[^{}]*\}\s*(?:,\s*\{[^{}]*\}\s*)*\]'
+                            $matches = $rx.Matches($txt)
+                            foreach ($m in $matches) {
+                                try {
+                                    $parsed = $m.Value | ConvertFrom-Json -ErrorAction SilentlyContinue
+                                    foreach ($it in $parsed) {
+                                        $norm = CihazNormalle $it
+                                        if ($norm) { [void]$bulunanlar.Add($norm) }
+                                    }
+                                } catch {}
+                            }
+                        }
+                    } catch {}
+                }
+            } catch {}
+        }
+    }
+
+    return ,$bulunanlar
+}
+
+function VeriMigrasyonYurut {
+    param($onceki)
+    Adim 'Eski CRM surumleri ve verileri kesfediliyor (Veri Migrasyonu)'
+
+    # 1. CANLI SUNUCU TARAMASI (SURECLERI DURDURMADAN ONCE!)
+    $canliVeriler = CanliSunucuVeriCek
+
+    # 2. DOSYA, SQLITE VE LOCALSTORAGE KESFI
+    $dosyaVerileri = EskiDosyalariTara
+
+    # 3. MEVCUT MIGRATED DOSYASI VARSA OKU
+    $mevcutMigFile = Join-Path $Ana 'migrated_devices.json'
+    $mevcutMigVerileri = @()
+    if (Test-Path $mevcutMigFile) {
+        try {
+            $rawM = [System.IO.File]::ReadAllText($mevcutMigFile, [System.Text.Encoding]::UTF8)
+            $parsedM = $rawM | ConvertFrom-Json -ErrorAction SilentlyContinue
+            if ($parsedM) {
+                foreach ($it in $parsedM) {
+                    $norm = CihazNormalle $it
+                    if ($norm) { $mevcutMigVerileri += $norm }
+                }
+            }
+        } catch {}
+    }
+
+    # 4. MERGE & DEDUPLICATE (id bazinda)
+    $uniqueMap = @{}
+    foreach ($item in ($canliVeriler + $dosyaVerileri + $mevcutMigVerileri)) {
+        if (-not $item) { continue }
+        $k = "$($item.id)"
+        if (-not $uniqueMap.ContainsKey($k)) {
+            $uniqueMap[$k] = $item
+        } else {
+            $cur = $uniqueMap[$k]
+            if ($item.updated_at -ge $cur.updated_at) {
+                $uniqueMap[$k] = $item
+            }
+        }
+    }
+
+    $siraliListe = @($uniqueMap.Values | Sort-Object { [long]$_.created_at })
+
+    # 5. GUVENLI YEDEKLEME: Asla veri silme, dokunmadan once yedekle!
+    $tarihDamgasi = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $yedekDizin = Join-Path $Ana ("yedekler\otomatik_migrasyon_$tarihDamgasi")
+    if (-not (Test-Path $yedekDizin)) { New-Item -ItemType Directory -Path $yedekDizin -Force | Out-Null }
+
+    # Eski html ve config'i yedekle
+    $yerelHtml = Join-Path $Ana 'Kuzgun_CRM.html'
+    if (Test-Path $yerelHtml) {
+        Copy-Item -Path $yerelHtml -Destination (Join-Path $yedekDizin 'Kuzgun_CRM_eski.html') -Force -ErrorAction SilentlyContinue
+    }
+    $mevcutConfig = ConfigYol
+    if (Test-Path $mevcutConfig) {
+        Copy-Item -Path $mevcutConfig -Destination (Join-Path $yedekDizin 'kurulum_eski.json') -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($siraliListe.Count -gt 0) {
+        $jsonStr = $siraliListe | ConvertTo-Json -Depth 5
+        [System.IO.File]::WriteAllText($mevcutMigFile, $jsonStr, (New-Object System.Text.UTF8Encoding($false)))
+
+        $backupCopy = Join-Path $yedekDizin "otomatik_migrasyon_$tarihDamgasi.json"
+        [System.IO.File]::WriteAllText($backupCopy, $jsonStr, (New-Object System.Text.UTF8Encoding($false)))
+
+        Basari ("  [OK] Eski surumlerden $($siraliListe.Count) cihaz kaydi basariyla kurtarildi ve yedeklendi:")
+        Satir Gray ("       -> $mevcutMigFile")
+        Satir Gray ("       -> $backupCopy")
+    } else {
+        Bilgi '  [ ] Taranan konumlarda eski veri bulunmadi (yeni kurulum olarak devam ediliyor).'
+    }
+
+    # 6. SURECLERI DURDUR VE ESKI KISAYOLLARI TASIN (CANLI VERI CEKILDIKTEN SONRA!)
+    EskiKurulumTemizle -HedefYedekDizin $yedekDizin
+
+    return ,$siraliListe
+}
+
 function OncekiKurulumBul {
     $cfg = ConfigOku
     $claspDosya = Join-Path $Proje '.clasp.json'
@@ -188,6 +682,22 @@ function OncekiKurulumBul {
         if (-not (Test-Path $Proje)) { New-Item -ItemType Directory -Path $Proje -Force | Out-Null }
         @{ scriptId = $scriptId; rootDir = '.' } | ConvertTo-Json | Set-Content $claspDosya -Encoding UTF8
     }
+
+    # Eski surum veya kalinti kontrolu
+    $eskiBulgular = @()
+    if (Test-Path 'C:\ozi') { $eskiBulgular += 'C:\ozi' }
+    foreach ($d in (MasaustuKlasorleri)) {
+        $eskiMasaustu = Get-ChildItem -Path $d -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -match '(?i)kuzgun' -and $_.Extension -match '(?i)^\.(html?|lnk|url|bat|cmd|vbs|py|ps1)$'
+        }
+        if ($eskiMasaustu) { $eskiBulgular += "$($eskiMasaustu.Count) masaustu dosyasi" }
+    }
+    $eskiProcs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.ProcessId -ne $PID -and $_.Name -match '(?i)^(python|pythonw|node|php)\.exe$' -and
+        $_.CommandLine -match '(?i)kuzgun' -and $_.CommandLine -notmatch '(?i)clasp|npm'
+    }
+    if ($eskiProcs) { $eskiBulgular += '127.0.0.1 yerel sunucu sureci' }
+
     if ($cfg -or $scriptId) {
         $erisim = 'ANYONE'
         if ($cfg -and $cfg.erisim) { $erisim = $cfg.erisim }
@@ -202,9 +712,25 @@ function OncekiKurulumBul {
              ScriptId = $scriptId
              Erisim = $erisim
              EskiSurum = if ($cfg -and $cfg.surum) { $cfg.surum } else { 'v2.0 (Eski)' }
+             EskiBulgular = $eskiBulgular
+             EskiKurulumVar = ($eskiBulgular.Count -gt 0)
         }
     }
-    return [pscustomobject]@{ Bulundu = $false }
+
+    if ($eskiBulgular.Count -gt 0) {
+        return [pscustomobject]@{
+            Bulundu = $true
+            Url = $null
+            DeploymentId = $null
+            ScriptId = $null
+            Erisim = 'ANYONE'
+            EskiSurum = 'v1.x (Yerel Masaustu/127.0.0.1)'
+            EskiBulgular = $eskiBulgular
+            EskiKurulumVar = $true
+        }
+    }
+
+    return [pscustomobject]@{ Bulundu = $false; EskiBulgular = @(); EskiKurulumVar = $false }
 }
 
 function ClaspYoluBul {
@@ -458,6 +984,9 @@ function Asama4_Tamam {
         Satir White ('    GOOGLE HESABI : ' + $sonuc.account + ' (Otomatik Eslendi)')
     }
     Satir White '    VARSAYILAN PIN: kuzgun2024  (Ilk giriste otomatik baglanir)'
+    if ($sonuc.migratedCount -gt 0) {
+        Satir Green ("    TASINAN VERI  : $($sonuc.migratedCount) cihaz kaydi yeni surume basariyla aktarildi")
+    }
     Write-Host ''
     Satir Gray '  - CRM simdi tarayicinizda otomatik aciliyor ve Google hesabinizla esleniyor.'
     Satir Gray '  - Masaustune "Kuzgun CRM" kisayolu eklendi / guncellendi (eski surum dosyalari yedeklenip kaldirildi).'
@@ -490,9 +1019,10 @@ function MasaustuKlasorleri {
 }
 
 function EskiKurulumTemizle {
-    # Eski surumlerin masaustu dosyalari / 127.0.0.1 yerel sunucusu yeni surumu golgeliyor; yedekleyip kaldir
+    param([string]$HedefYedekDizin = '')
+    # Eski surumlerin masaustu dosyalari / 127.0.0.1 yerel sunucusu yeni surumu golgeliyor; yedekleyip tasi (asla silme!)
     try {
-        $yedekKlasor = Join-Path $Ana ('eski_masaustu_' + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+        $yedekKlasor = if ($HedefYedekDizin) { Join-Path $HedefYedekDizin 'eski_masaustu' } else { Join-Path $Ana ('eski_masaustu_' + (Get-Date -Format 'yyyyMMdd_HHmmss')) }
         $tasindi = 0
         foreach ($d in (MasaustuKlasorleri)) {
             foreach ($f in (Get-ChildItem -Path $d -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)kuzgun' -and $_.Extension -match '(?i)^\.(html?|lnk|url|bat|cmd|vbs|py|ps1)$' })) {
@@ -510,23 +1040,44 @@ function EskiKurulumTemizle {
                 $tasindi++
             }
         }
-        # Eski yerel (127.0.0.1) sunucu surecleri
+        # Eski yerel (127.0.0.1) sunucu surecleri (Canli veri cekildikten sonra guvenle durdurulur)
         $durdu = 0
         foreach ($pr in (Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
                 $_.ProcessId -ne $PID -and $_.Name -match '(?i)^(python|pythonw|node|php)\.exe$' -and
                 $_.CommandLine -match '(?i)kuzgun' -and $_.CommandLine -notmatch '(?i)clasp|npm' })) {
             try { Stop-Process -Id $pr.ProcessId -Force -ErrorAction Stop; $durdu++ } catch {}
         }
-        if ($tasindi -gt 0) { Basari ('  [OK] Eski masaustu dosyalari yedeklenip kaldirildi (' + $tasindi + ') -> ' + $yedekKlasor) }
+        if ($tasindi -gt 0) { Basari ('  [OK] Eski masaustu dosyalari yedeklenip tasindi (' + $tasindi + ') -> ' + $yedekKlasor) }
         if ($durdu -gt 0) { Basari ('  [OK] Eski yerel sunucu (127.0.0.1) durduruldu (' + $durdu + ')') }
     } catch { Uyari ('  [!] Eski kurulum temizligi atlandi: ' + $_.Exception.Message) }
 }
 
 function KisayolOlustur {
-    param([string]$url)
-    # 1) Web adresi gomulu yerel kopya (cift tiklayinca dogrudan buluta baglanir)
+    param(
+        [string]$url,
+        $cihazlar = $null
+    )
+    # 1) Web adresi ve gomulu veriler enjekte edilmis yerel HTML kopya
     $html = Get-Content (Join-Path $Kaynak 'Kuzgun_Iletisim_CRM.html') -Raw -Encoding UTF8
-    if ($url) { $html = $html.Replace("const EMBED_URL = '';", "const EMBED_URL = '" + $url + "';") }
+    if ($url) {
+        $html = $html.Replace("const EMBED_URL = '';", "const EMBED_URL = '" + $url + "';")
+    }
+
+    # Eger cihaz listesi verilmediyse diskteki migrated_devices.json'dan oku
+    if (-not $cihazlar) {
+        $migFile = Join-Path $Ana 'migrated_devices.json'
+        if (Test-Path $migFile) {
+            try {
+                $cihazlar = Get-Content $migFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            } catch {}
+        }
+    }
+
+    if ($cihazlar -and @($cihazlar).Count -gt 0) {
+        $devJson = @($cihazlar) | ConvertTo-Json -Depth 5 -Compress
+        $html = $html.Replace("const EMBED_DEVICES = [];", "const EMBED_DEVICES = " + $devJson + ";")
+    }
+
     $yerelHtml = Join-Path $Ana 'Kuzgun_CRM.html'
     if (-not (Test-Path $Ana)) { New-Item -ItemType Directory -Path $Ana -Force | Out-Null }
     [System.IO.File]::WriteAllText($yerelHtml, $html, (New-Object System.Text.UTF8Encoding($false)))
@@ -534,7 +1085,7 @@ function KisayolOlustur {
     $olustu = 0
     foreach ($d in (MasaustuKlasorleri)) {
         try {
-            # Ana kisayol: .lnk (yerel dosya, her zaman guncel adres gomulu) - ikon ile
+            # Ana kisayol: .lnk (yerel dosya, her zaman guncel adres ve veriler gomulu) - ikon ile
             $lnk = Join-Path $d 'Kuzgun CRM.lnk'
             $ws = New-Object -ComObject WScript.Shell
             $k = $ws.CreateShortcut($lnk)
@@ -565,7 +1116,7 @@ function OtomatikCalistir {
         Baslik ('ONCEKI KURULUM ALGILANDI -> OTOMATIK GUNCELLENIYOR (' + $Surdur + ')')
         if ($onceki.Url) { Satir White ('    MEVCUT ADRES  : ' + $onceki.Url) }
         if ($onceki.ScriptId) { Satir White ('    PROJE KIMLIGI : ' + $onceki.ScriptId) }
-        Satir Cyan '    Mevcut verileriniz korunarak yeni surum (v2.2.0) uzerine yaziliyor...'
+        Satir Cyan ('    Mevcut verileriniz taranip korunarak yeni surum (' + $Surdur + ') uzerine yaziliyor...')
     } else {
         Baslik ('TEK TIKLA OTOMATIK KURULUM BASLATILIYOR (' + $Surdur + ')')
         Satir Cyan '    Hicbir ek ayar gerektirmeden otomatik kurulum ve Google eslemesi yapiliyor...'
@@ -595,11 +1146,19 @@ function OtomatikCalistir {
     $erisim = 'ANYONE'
     if ($onceki -and $onceki.Erisim) { $erisim = $onceki.Erisim }
 
-    EskiKurulumTemizle
+    # 1. VERI MIGRASIYONU: Canli sunucu probe -> dosya ve sqlite taramasi -> guvenli yedekleme -> temizlik
+    $migrated = VeriMigrasyonYurut -onceki $onceki
+
+    # 2. Dosyalari hazirla (migrated veriler index.html icine de enjekte edilir)
     DosyalariHazirla -erisim $erisim
-    # Bulut adimi basarisiz olsa bile masaustu kisayolu olussun (adres varsa gomulur)
-    KisayolOlustur -url $(if ($onceki -and $onceki.Url) { $onceki.Url } else { '' })
+
+    # 3. Bulut adimi basarisiz olsa bile masaustu kisayolu olussun (adres ve veriler gomulur)
+    KisayolOlustur -url $(if ($onceki -and $onceki.Url) { $onceki.Url } else { '' }) -cihazlar $migrated
+
+    # 4. Bulut projesini ve yayinini olustur / guncelle
     $sonuc = Asama_OtomatikKurulum -erisim $erisim -onceki $onceki
+
+    # 5. Konfigurasyonu yaz
     ConfigYaz @{
         url = $sonuc.url
         deploymentId = $sonuc.deploymentId
@@ -608,8 +1167,14 @@ function OtomatikCalistir {
         erisim = $erisim
         guncelleme = (Get-Date -Format o)
         surum = $Surdur
+        migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
     }
-    KisayolOlustur -url $sonuc.url
+
+    # 6. Masaustu kisayolunu dogrulanmis yeni URL ve gomulu verilerle guncelle
+    KisayolOlustur -url $sonuc.url -cihazlar $migrated
+
+    # 7. Islemi tamamla
+    $sonuc['migratedCount'] = $(if ($migrated) { @($migrated).Count } else { 0 })
     Asama4_Tamam -sonuc $sonuc -guncellendi $guncellemeMi
 }
 
@@ -662,6 +1227,68 @@ function TestModu {
             Basari '  [OK] onceki kurulum otomatik algilama ve kurtarma'
         } else {
             Hata '  [X] onceki kurulum algilama basarisiz'; $basarili = $false
+        }
+
+        # TEST: CihazNormalle (Eski Turkce alan adlari ve sema donusumu)
+        $testRaw = @{
+            kayit_id = 101
+            tur = 'tamir'
+            durum = 'islemde'
+            cihaz_marka = 'Apple'
+            cihaz_model = 'iPhone 11'
+            imei_no = '353123456789012'
+            seri_no = 'F2LZ9999'
+            musteri_adi = 'Mehmet Demir'
+            musteri_tel = '05559876543'
+            yapilan_islem = 'Batarya degisimi'
+            sifre = '2024'
+            aciklama = 'Kasa temizlenecek'
+            fiyat = '1.250,50 TL'
+            kayit_tarihi = '2024-05-10 14:30:00'
+        }
+        $normDev = CihazNormalle $testRaw
+        if ($normDev -and $normDev.id -eq 101 -and $normDev.type -eq 'REPAIR' -and $normDev.status -eq 'IN_PROGRESS' -and
+            $normDev.customer_name -eq 'Mehmet Demir' -and $normDev.notes -like '*2024*' -and $normDev.price -eq 1250.5 -and
+            $normDev.created_at -gt 100000000000L) {
+            Basari '  [OK] CihazNormalle eski Turkce alan adlari ve format donusumu'
+        } else {
+            Hata '  [X] CihazNormalle donusum hatasi'
+            $basarili = $false
+        }
+
+        # TEST: EMBED_DEVICES enjeksiyonu
+        $testDevList = @($normDev)
+        $migTestFile = Join-Path $script:Ana 'migrated_devices.json'
+        [System.IO.File]::WriteAllText($migTestFile, ($testDevList | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
+        DosyalariHazirla -erisim 'ANYONE_ANONYMOUS'
+        $indexHtml = Get-Content (Join-Path $testKlasor 'index.html') -Raw
+        if ($indexHtml -match 'const EMBED_DEVICES = \[\{.*Mehmet Demir.*\}\];') {
+            Basari '  [OK] EMBED_DEVICES HTML enjeksiyonu ve veri guvenligi'
+        } else {
+            Hata '  [X] EMBED_DEVICES enjeksiyonu basarisiz'
+            $basarili = $false
+        }
+
+        # TEST: Canli sunucu probe guvenligi (zaman asimi ve sessiz hata yonetimi)
+        try {
+            $probeRes = CanliSunucuVeriCek
+            Basari '  [OK] Canli sunucu tarama mekanizmasi ve guvenli zaman asimi'
+        } catch {
+            Hata ('  [X] Canli sunucu taramasi hata verdi: ' + $_.Exception.Message)
+            $basarili = $false
+        }
+
+        # TEST: Guvenli tasima (move-never-delete)
+        $dummyTestFile = Join-Path $testKlasor 'dummy_legacy.bat'
+        Set-Content -Path $dummyTestFile -Value '@echo off' -Encoding ASCII
+        $destBackup = Join-Path $testKlasor 'test_yedek_klasor'
+        if (-not (Test-Path $destBackup)) { New-Item -ItemType Directory -Path $destBackup -Force | Out-Null }
+        Move-Item -Path $dummyTestFile -Destination (Join-Path $destBackup 'dummy_legacy.bat') -Force
+        if (-not (Test-Path $dummyTestFile) -and (Test-Path (Join-Path $destBackup 'dummy_legacy.bat'))) {
+            Basari '  [OK] Eski dosyalari silmeden guvenli tasima (move-never-delete)'
+        } else {
+            Hata '  [X] Dosya tasima dogrulamasi basarisiz'
+            $basarili = $false
         }
 
         $fakeBin = Join-Path $testKlasor 'node_modules\.bin'

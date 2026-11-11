@@ -14,7 +14,7 @@ function doGet() {
 var API_FUNCS_ = {
   crmStatus: 1, syncGoogleAccount: 1, listDevices: 1, upsertDevice: 1, deleteDevice: 1,
   importDevices: 1, changePin: 1, backupToDrive: 1, listDriveBackups: 1, getDriveBackup: 1,
-  deleteDriveBackup: 1, restoreFromDriveBackup: 1, replaceAllDevices: 1
+  deleteDriveBackup: 1, restoreFromDriveBackup: 1, replaceAllDevices: 1, setupDailyBackup: 1
 };
 
 function doPost(e) {
@@ -82,7 +82,11 @@ function getSheet_() {
 function toObject_(row) {
   var obj = {};
   for (var i = 0; i < COLUMNS.length; i++) {
-    obj[COLUMNS[i]] = row[i];
+    var val = row[i];
+    if (typeof val === 'string' && val.charAt(0) === "'" && /^[=+\-@]/.test(val.slice(1))) {
+      val = val.slice(1);
+    }
+    obj[COLUMNS[i]] = val;
   }
   obj.id = String(obj.id);
   obj.type = String(obj.type || '');
@@ -105,9 +109,166 @@ function toRow_(device) {
   var row = [];
   for (var i = 0; i < COLUMNS.length; i++) {
     var v = device[COLUMNS[i]];
-    row.push(v === undefined || v === null ? '' : v);
+    if (v === undefined || v === null) {
+      v = '';
+    } else if (typeof v === 'string' && /^[=+\-@]/.test(v)) {
+      v = "'" + v;
+    }
+    row.push(v);
   }
   return row;
+}
+
+function normalizeDevice_(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  var d = {};
+  for (var k in raw) {
+    if (Object.prototype.hasOwnProperty.call(raw, k)) d[k] = raw[k];
+  }
+
+  // id / _id / device_id / kayit_id / no
+  var idVal = d.id !== undefined && d.id !== null && d.id !== '' ? d.id :
+              (d._id !== undefined && d._id !== null && d._id !== '' ? d._id :
+              (d.device_id !== undefined && d.device_id !== null && d.device_id !== '' ? d.device_id :
+              (d.kayit_id !== undefined && d.kayit_id !== null && d.kayit_id !== '' ? d.kayit_id :
+              (d.no !== undefined && d.no !== null && d.no !== '' ? d.no : ''))));
+  d.id = String(idVal || '');
+
+  // brand / marka / device_brand / cihaz_marka
+  d.brand = String(d.brand || d.marka || d.device_brand || d.cihaz_marka || '');
+
+  // model / cihaz_model / device_model / cihaz
+  d.model = String(d.model || d.cihaz_model || d.device_model || d.cihaz || '');
+
+  // imei / imei_no / imeiNumber
+  var imeiVal = d.imei !== undefined && d.imei !== null ? d.imei :
+                (d.imei_no !== undefined && d.imei_no !== null ? d.imei_no :
+                (d.imeiNumber !== undefined && d.imeiNumber !== null ? d.imeiNumber : ''));
+  d.imei = String(imeiVal || '');
+
+  // serial_number / serialNumber / seri_no / seriNo / serial
+  var snVal = d.serial_number !== undefined && d.serial_number !== null ? d.serial_number :
+              (d.serialNumber !== undefined && d.serialNumber !== null ? d.serialNumber :
+              (d.seri_no !== undefined && d.seri_no !== null ? d.seri_no :
+              (d.seriNo !== undefined && d.seriNo !== null ? d.seriNo :
+              (d.serial !== undefined && d.serial !== null ? d.serial : ''))));
+  d.serial_number = String(snVal || '');
+
+  // customer_name / customerName / musteri_adi / musteri / customer / ad_soyad / full_name
+  d.customer_name = String(d.customer_name || d.customerName || d.musteri_adi || d.musteri || d.customer || d.ad_soyad || d.full_name || '');
+
+  // customer_phone / customerPhone / musteri_tel / telefon / phone / tel
+  var phoneVal = d.customer_phone !== undefined && d.customer_phone !== null ? d.customer_phone :
+                 (d.customerPhone !== undefined && d.customerPhone !== null ? d.customerPhone :
+                 (d.musteri_tel !== undefined && d.musteri_tel !== null ? d.musteri_tel :
+                 (d.telefon !== undefined && d.telefon !== null ? d.telefon :
+                 (d.phone !== undefined && d.phone !== null ? d.phone :
+                 (d.tel !== undefined && d.tel !== null ? d.tel : '')))));
+  d.customer_phone = String(phoneVal || '');
+
+  // operations_performed / operations / yapilan_islemler / islem / problem / ariza / issue / description
+  d.operations_performed = String(d.operations_performed || d.operations || d.yapilan_islemler || d.islem || d.problem || d.ariza || d.issue || d.description || '');
+
+  // notes / notlar / aciklama
+  var notesVal = d.notes || d.notlar || d.aciklama || '';
+  // password / sifre preservation
+  var pwdVal = d.sifre !== undefined && d.sifre !== null && String(d.sifre) !== '' ? String(d.sifre) :
+               (d.password !== undefined && d.password !== null && String(d.password) !== '' ? String(d.password) :
+               (d.device_password !== undefined && d.device_password !== null && String(d.device_password) !== '' ? String(d.device_password) : ''));
+  if (pwdVal && String(notesVal).indexOf(pwdVal) === -1) {
+    notesVal = (notesVal ? (notesVal + ' | ') : '') + 'Şifre: ' + pwdVal;
+  }
+  d.notes = String(notesVal || '');
+
+  // type normalization
+  var rawType = String(d.type || d.tur || d.record_type || d.islem_turu || d.category || '').toLowerCase().trim();
+  if (rawType === 'satis' || rawType === 'alim' || rawType === 'stok' || rawType === 'sale' || rawType === 'inventory' || rawType === 'stock') {
+    d.type = 'SALE';
+  } else if (rawType === 'tamir' || rawType === 'servis' || rawType === 'repair' || rawType === 'service') {
+    d.type = 'REPAIR';
+  } else if (!d.type) {
+    d.type = 'REPAIR';
+  } else {
+    d.type = String(d.type).toUpperCase();
+  }
+
+  // status normalization
+  var rawStatus = String(d.status || d.durum || d.state || '').toLowerCase().trim();
+  if (rawStatus === 'bekliyor' || rawStatus === 'beklemede' || rawStatus === 'pending' || rawStatus === 'yeni') {
+    d.status = 'PENDING';
+  } else if (rawStatus === 'islemde' || rawStatus === 'işlemde' || rawStatus === 'tamirde' || rawStatus === 'in_progress' || rawStatus === 'processing') {
+    d.status = 'IN_PROGRESS';
+  } else if (rawStatus === 'tamamlandi' || rawStatus === 'tamamlandı' || rawStatus === 'hazir' || rawStatus === 'hazır' || rawStatus === 'completed' || rawStatus === 'done') {
+    d.status = 'COMPLETED';
+  } else if (rawStatus === 'teslim' || rawStatus === 'teslim_edildi' || rawStatus === 'teslim edildi' || rawStatus === 'delivered') {
+    d.status = 'DELIVERED';
+  } else if (rawStatus === 'stokta' || rawStatus === 'satilik' || rawStatus === 'satılık' || rawStatus === 'in_stock' || rawStatus === 'available') {
+    d.status = 'IN_STOCK';
+  } else if (rawStatus === 'satildi' || rawStatus === 'satıldı' || rawStatus === 'sold') {
+    d.status = 'SOLD';
+  } else if (!d.status) {
+    d.status = d.type === 'SALE' ? 'IN_STOCK' : 'PENDING';
+  } else {
+    d.status = String(d.status).toUpperCase();
+  }
+
+  // price / fiyat / ucret / cost / amount / tutar
+  var pVal = d.price !== undefined && d.price !== null && d.price !== '' ? d.price :
+             (d.fiyat !== undefined && d.fiyat !== null && d.fiyat !== '' ? d.fiyat :
+             (d.ucret !== undefined && d.ucret !== null && d.ucret !== '' ? d.ucret :
+             (d.cost !== undefined && d.cost !== null && d.cost !== '' ? d.cost :
+             (d.amount !== undefined && d.amount !== null && d.amount !== '' ? d.amount :
+             (d.tutar !== undefined && d.tutar !== null && d.tutar !== '' ? d.tutar : null)))));
+  if (pVal !== null && pVal !== undefined && pVal !== '') {
+    if (typeof pVal === 'string') {
+      var clean = pVal.replace(/[₺TL\s]/gi, '').trim();
+      if (clean.indexOf('.') >= 0 && clean.indexOf(',') >= 0) {
+        clean = clean.replace(/\./g, '').replace(',', '.');
+      } else if (clean.indexOf(',') >= 0) {
+        clean = clean.replace(',', '.');
+      } else if (/^\d{1,3}(\.\d{3})+$/.test(clean)) {
+        clean = clean.replace(/\./g, '');
+      }
+      var num = Number(clean);
+      d.price = isNaN(num) ? null : num;
+    } else {
+      d.price = Number(pVal);
+    }
+  } else {
+    d.price = null;
+  }
+
+  // created_at / updated_at / tarih / date / kayit_tarihi
+  var rawDate = d.created_at || d.createdAt || d.tarih || d.date || d.kayit_tarihi;
+  var parsedDate = 0;
+  if (rawDate) {
+    if (typeof rawDate === 'number') {
+      parsedDate = rawDate < 1e11 ? rawDate * 1000 : rawDate;
+    } else {
+      var dObj = new Date(rawDate);
+      if (!isNaN(dObj.getTime())) {
+        parsedDate = dObj.getTime();
+      } else {
+        var n = Number(rawDate);
+        if (!isNaN(n) && n > 0) parsedDate = n < 1e11 ? n * 1000 : n;
+      }
+    }
+  }
+  var now = Date.now();
+  d.created_at = parsedDate || Number(d.created_at) || now;
+  var rawUp = d.updated_at || d.updatedAt;
+  var parsedUp = 0;
+  if (rawUp) {
+    if (typeof rawUp === 'number') {
+      parsedUp = rawUp < 1e11 ? rawUp * 1000 : rawUp;
+    } else {
+      var uObj = new Date(rawUp);
+      if (!isNaN(uObj.getTime())) parsedUp = uObj.getTime();
+    }
+  }
+  d.updated_at = parsedUp || Number(d.updated_at) || d.created_at;
+
+  return d;
 }
 
 function readRows_() {
@@ -196,10 +357,17 @@ function deleteDevice(pin, id) {
   }
 }
 
-function importDevices(pin, devices) {
+function importDevices(pin, devices, safety) {
   auth_(pin);
+  var safetyFile = null;
+  var safetyBackup = null;
+  if (safety === true) {
+    var bRes = runBackup_(true, 'oncesi');
+    safetyFile = bRes.file;
+    safetyBackup = { id: bRes.fileId, name: bRes.file, count: bRes.count };
+  }
   if (!devices || !devices.length) {
-    return { status: 'ok', imported: 0, total: readRows_().length };
+    return { status: 'ok', imported: 0, total: readRows_().length, safetyFile: safetyFile, safetyBackup: safetyBackup };
   }
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -208,15 +376,14 @@ function importDevices(pin, devices) {
     var rows = readRows_();
     var updates = [];
     var appends = [];
+    var processed = 0;
     for (var i = 0; i < devices.length; i++) {
-      var d = devices[i];
+      var raw = devices[i];
+      var d = normalizeDevice_(raw);
       if (!d || d.id === undefined || d.id === null || d.id === '') {
         continue;
       }
-      d.updated_at = Number(d.updated_at) || Date.now();
-      if (!d.created_at) {
-        d.created_at = d.updated_at;
-      }
+      processed++;
       var idx = findRow_(rows, String(d.id));
       if (idx >= 0) {
         updates.push({ row: rows[idx]._row, data: toRow_(d) });
@@ -230,7 +397,7 @@ function importDevices(pin, devices) {
     if (appends.length) {
       sh.getRange(sh.getLastRow() + 1, 1, appends.length, COLUMNS.length).setValues(appends);
     }
-    return { status: 'ok', imported: devices.length, updated: updates.length, added: appends.length };
+    return { status: 'ok', imported: processed, updated: updates.length, added: appends.length, safetyFile: safetyFile, safetyBackup: safetyBackup };
   } finally {
     lock.releaseLock();
   }
@@ -272,7 +439,7 @@ function crmStatus(pin) {
     dailyBackupActive: hasDaily,
     accountEmail: ownerEmail || props.getProperty('SYNCED_GOOGLE_ACCOUNT') || '',
     activeUserEmail: activeEmail || ownerEmail || '',
-    version: '2.2.0',
+    version: '2.3.0',
     updated: rows.reduce(function (m, r) {
       return Math.max(m, Number(r.updated_at) || 0);
     }, 0)
@@ -350,7 +517,7 @@ function runBackup_(instant, prefix) {
     var same = folder.getFilesByName(name);
     while (same.hasNext()) same.next().setTrashed(true);
   }
-  var json = JSON.stringify({ app: 'kuzgun-crm', version: '2.2.0', exported_at: new Date().toISOString(), count: data.length, devices: data }, null, 2);
+  var json = JSON.stringify({ app: 'kuzgun-crm', version: '2.3.0', exported_at: new Date().toISOString(), count: data.length, devices: data }, null, 2);
   var created = folder.createFile(name, json, MimeType.PLAIN_TEXT);
   try { created.setDescription(JSON.stringify({ count: data.length })); } catch (e) {}
 
@@ -433,9 +600,14 @@ function parseBackup_(file) {
   var parsed = JSON.parse(file.getBlob().getDataAsString());
   var incoming = Array.isArray(parsed) ? parsed : (parsed && parsed.devices);
   if (!Array.isArray(incoming)) throw new Error('GECERSIZ_YEDEK_FORMATI');
-  return incoming.filter(function (d) {
-    return d && d.id !== undefined && d.id !== null && d.id !== '';
-  });
+  var out = [];
+  for (var i = 0; i < incoming.length; i++) {
+    var norm = normalizeDevice_(incoming[i]);
+    if (norm && norm.id !== undefined && norm.id !== null && norm.id !== '') {
+      out.push(norm);
+    }
+  }
+  return out;
 }
 
 function getDriveBackup(pin, fileId) {
@@ -461,17 +633,15 @@ function replaceRows_(incoming) {
     if (last > 1) {
       sh.getRange(2, 1, last - 1, COLUMNS.length).clearContent();
     }
-    var now = Date.now();
     var appends = [];
     var seen = {};
     for (var i = 0; i < incoming.length; i++) {
-      var d = incoming[i];
+      var raw = incoming[i];
+      var d = normalizeDevice_(raw);
       if (!d || d.id === undefined || d.id === null || d.id === '') continue;
       var key = String(d.id);
       if (seen[key]) continue;
       seen[key] = true;
-      d.updated_at = Number(d.updated_at) || now;
-      if (!d.created_at) d.created_at = d.updated_at;
       appends.push(toRow_(d));
     }
     if (appends.length) {
@@ -483,10 +653,17 @@ function replaceRows_(incoming) {
   }
 }
 
-function replaceAllDevices(pin, devices) {
+function replaceAllDevices(pin, devices, safety) {
   auth_(pin);
+  var safetyFile = null;
+  var safetyBackup = null;
+  if (safety === true || safety === undefined) {
+    var bRes = runBackup_(true, 'oncesi');
+    safetyFile = bRes.file;
+    safetyBackup = { id: bRes.fileId, name: bRes.file, count: bRes.count };
+  }
   var n = replaceRows_(devices || []);
-  return { status: 'ok', count: n };
+  return { status: 'ok', count: n, safetyFile: safetyFile, safetyBackup: safetyBackup };
 }
 
 function restoreFromDriveBackup(pin, fileId, mode, safety) {
@@ -501,11 +678,17 @@ function restoreFromDriveBackup(pin, fileId, mode, safety) {
     var n = replaceRows_(incoming);
     return { status: 'ok', mode: 'replace', count: n, name: file.getName(), safetyFile: safetyFile };
   }
+  if (safety !== false) {
+    safetyFile = runBackup_(true, 'oncesi').file;
+  }
   var res = importDevices(pin, incoming);
-  return { status: 'ok', mode: 'merge', count: incoming.length, imported: res.imported, updated: res.updated, added: res.added, name: file.getName() };
+  return { status: 'ok', mode: 'merge', count: incoming.length, imported: res.imported, updated: res.updated, added: res.added, name: file.getName(), safetyFile: safetyFile };
 }
 
-function setupDailyBackup() {
+function setupDailyBackup(pin) {
+  if (pin !== undefined && pin !== null && pin !== '') {
+    auth_(pin);
+  }
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === 'backupDaily') {
@@ -513,5 +696,5 @@ function setupDailyBackup() {
     }
   }
   ScriptApp.newTrigger('backupDaily').timeBased().everyDays(1).atHour(3).create();
-  return { status: 'ok' };
+  return { status: 'ok', dailyBackupActive: true };
 }
