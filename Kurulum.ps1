@@ -844,8 +844,8 @@ function OncekiKurulumBul {
     if ($eskiProcs) { $eskiBulgular += '127.0.0.1 yerel sunucu sureci' }
 
     if ($cfg -or $scriptId) {
-        $erisim = 'ANYONE'
-        if ($cfg -and $cfg.erisim) { $erisim = $cfg.erisim }
+        $erisim = 'ANYONE_ANONYMOUS'
+        if ($cfg -and $cfg.erisim -and $cfg.erisim -ne 'ANYONE') { $erisim = $cfg.erisim }
         $url = $null
         if ($cfg -and $cfg.url) { $url = $cfg.url }
         $depId = $null
@@ -868,7 +868,7 @@ function OncekiKurulumBul {
             Url = $null
             DeploymentId = $null
             ScriptId = $null
-            Erisim = 'ANYONE'
+            Erisim = 'ANYONE_ANONYMOUS'
             EskiSurum = 'v1.x (Yerel Masaustu/127.0.0.1)'
             EskiBulgular = $eskiBulgular
             EskiKurulumVar = $true
@@ -997,7 +997,7 @@ function Asama_OtomatikKurulum {
             if ($apiDeneme -eq 1 -and ($hataMesaj -match 'User has not enabled the Apps Script API' -or $hataMesaj -match 'script\.google\.com/home/usersettings' -or $hataMesaj -match 'API')) {
                 Uyari '    [!] Google Apps Script API henuz acik degil. Ayar sayfasi aciliyor...'
                 Start-Process 'https://script.google.com/home/usersettings'
-                $cevapApi = Read-Host '    Acilan sayfada "Google Apps Script API" anahtarini ACIK yapip Enter''a basin ([C] Cikis)'
+                if ($Etkilesimli) { $cevapApi = Read-Host '    Acilan sayfada "Google Apps Script API" anahtarini ACIK yapip Enter''a basin ([C] Cikis)' } else { Uyari '    [!] Tarayicida acilan sayfadan Google Apps Script API anahtarini ACIK yapin (15 sn bekleniyor)...'; Start-Sleep -Seconds 15; $cevapApi = '' }
                 if ($cevapApi -match '^[Cc\u00E7\u00C7]$' -or $cevapApi -eq [string][char]0x00E7 -or $cevapApi -eq [string][char]0x00C7) { exit 0 }
                 Start-Sleep -Seconds 2
             } elseif ($cikarilmis -and $apiDeneme -eq 1) {
@@ -1266,7 +1266,7 @@ function OtomatikCalistir {
         if (-not $kuruldu -and -not (KomutVarMi 'node')) {
             Uyari '  Node.js otomatik kurulamadi. Indirme sayfasi aciliyor...'
             Start-Process 'https://nodejs.org/'
-            $cevapNode = Read-Host '  Node.js kurduktan sonra Enter''a basin  [C] Cikis'
+            if ($Etkilesimli) { $cevapNode = Read-Host '  Node.js kurduktan sonra Enter''a basin  [C] Cikis' } else { $cevapNode = '' }
             if ($cevapNode -match '^[Cc\u00E7\u00C7]$' -or $cevapNode -eq [string][char]0x00E7 -or $cevapNode -eq [string][char]0x00C7) { exit 0 }
             PathYenile
             if (-not (KomutVarMi 'node')) {
@@ -1277,8 +1277,8 @@ function OtomatikCalistir {
         }
     }
 
-    $erisim = 'ANYONE'
-    if ($onceki -and $onceki.Erisim) { $erisim = $onceki.Erisim }
+    $erisim = 'ANYONE_ANONYMOUS'
+    if ($onceki -and $onceki.Erisim -and $onceki.Erisim -ne 'ANYONE') { $erisim = $onceki.Erisim }
 
     # 1. VERI MIGRASIYONU: Canli sunucu probe -> dosya ve sqlite taramasi -> guvenli yedekleme -> temizlik
     $migrated = VeriMigrasyonYurut -onceki $onceki
@@ -1513,6 +1513,6 @@ catch {
         Satir Gray ('  Ayrinti: ' + $log)
     }
     Write-Host ''
-    $null = Read-Host '  Kapatmak icin Enter tusuna basin'
+    if ($Etkilesimli) { $null = Read-Host '  Kapatmak icin Enter tusuna basin' }
     exit 1
 }
