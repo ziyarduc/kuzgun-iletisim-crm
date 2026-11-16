@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [switch]$Bilgi,
@@ -8,14 +8,15 @@ param(
     [switch]$Sifirdan,
     [switch]$Etkilesimli,
     [switch]$Sessiz,
-    [switch]$Test
+    [switch]$Test,
+    [string]$ExeDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $Kaynak = $PSScriptRoot
 $Ana = Join-Path $env:LOCALAPPDATA 'KuzgunCRM'
 $Proje = Join-Path $Ana 'proje'
-$Surdur = 'v2.3.0'
+$Surdur = 'v2.3.1'
 function ConfigYol { return (Join-Path $Ana 'kurulum.json') }
 
 function Satir { param($renk, $metin) Write-Host $metin -ForegroundColor $renk }
@@ -38,7 +39,7 @@ function Devam { param($varsayilan = '')
     if (-not $Etkilesimli) { return '' }
     if ($varsayilan -ne '') { $cevap = Read-Host ("  Enter = devam (" + $varsayilan + ")  [C] Cikis") }
     else { $cevap = Read-Host '  Enter ile devam edin  [C] Cikis' }
-    if ($cevap -match '^[CcçÇ]$') {
+    if ($cevap -match '^[Cc\u00E7\u00C7]$' -or $cevap -eq [string][char]0x00E7 -or $cevap -eq [string][char]0x00C7) {
         Write-Host '  Islem iptal edildi. Cikiliyor...' -ForegroundColor Yellow
         exit 0
     }
@@ -162,7 +163,7 @@ function DosyalariHazirla {
             if ($migData -and $migData.Trim().Length -gt 2) {
                 $migObj = $migData | ConvertFrom-Json
                 if ($migObj) {
-                    $migComp = @($migObj) | ConvertTo-Json -Depth 5 -Compress
+                    $migComp = ConvertTo-Json -InputObject @($migObj) -Depth 5 -Compress
                     $htmlContent = $htmlContent.Replace("const EMBED_DEVICES = [];", "const EMBED_DEVICES = $migComp;")
                 }
             }
@@ -191,28 +192,54 @@ function ConfigOku {
 }
 
 function CihazNormalle {
-    param($d)
+    param($d, $occurrenceIndex = 0)
     if (-not $d) { return $null }
 
-    # id / _id / device_id / kayit_id / no
+    # Strict CRM-field guard: reject non-CRM objects
+    $hasCrmField = $false
+    foreach ($k in @('brand', 'marka', 'cihaz_marka', 'model', 'cihaz_model', 'cihaz',
+                     'customer_name', 'musteri_adi', 'musteri', 'customer', 'ad_soyad', 'full_name',
+                     'customer_phone', 'musteri_tel', 'telefon', 'phone', 'tel',
+                     'imei', 'imei_no', 'imeiNumber',
+                     'serial_number', 'serialNumber', 'seri_no', 'seriNo', 'serial',
+                     'operations_performed', 'operations', 'yapilan_islemler', 'yapilan_islem', 'islem', 'problem', 'ariza', 'issue', 'description',
+                     'notes', 'notlar', 'aciklama', 'price', 'fiyat', 'ucret', 'cost', 'amount', 'tutar')) {
+        if ($d.$k -ne $null -and "$($d.$k)".Trim() -ne '') {
+            $hasCrmField = $true
+            break
+        }
+    }
+    if (-not $hasCrmField) { return $null }
+
+    # id / _id / device_id / kayit_id / no (with deterministic fallback ID)
     $idVal = $null
     foreach ($k in @('id', '_id', 'device_id', 'kayit_id', 'no')) {
-        if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $idVal = $d.$k; break }
+        if ($d.$k -ne $null -and "$($d.$k)".Trim() -ne '') { $idVal = $d.$k; break }
     }
-    if ($idVal -eq $null -or "$idVal" -eq '') { return $null }
-
-    $idParsed = 0
-    $finalId = if ([int]::TryParse("$idVal", [ref]$idParsed)) { $idParsed } else { "$idVal" }
+    $isSynthetic = $false
+    if ($idVal -eq $null -or "$idVal".Trim() -eq '') {
+        $isSynthetic = $true
+        $hashStr = "$($d.customer_name)|$($d.musteri_adi)|$($d.customer_phone)|$($d.telefon)|$($d.brand)|$($d.marka)|$($d.model)|$($d.cihaz)|$($d.imei)|$($d.serial_number)|$($d.seri_no)|$($d.operations_performed)|$($d.ariza)|$($d.fiyat)|$($d.price)|$($d.notlar)|$($d.notes)|$($d.tur)|$($d.type)|$($d.durum)|$($d.status)|$($d.created_at)|$($d.tarih)|$occurrenceIndex"
+        $hVal = 0
+        foreach ($b in [System.Text.Encoding]::UTF8.GetBytes($hashStr)) {
+            $hVal = (($hVal * 31) + $b) -band 0x7FFFFFFF
+        }
+        $finalId = 1000000000 + ($hVal % 900000000)
+    } else {
+        $idParsed = 0
+        $finalId = if ([int]::TryParse("$idVal", [ref]$idParsed)) { $idParsed } else { "$idVal" }
+    }
 
     # type / tur / record_type / islem_turu / category
     $typeVal = ''
     foreach ($k in @('type', 'tur', 'record_type', 'islem_turu', 'category')) {
         if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $typeVal = "$($d.$k)"; break }
     }
-    $tLower = $typeVal.ToLower().Trim()
-    if ($tLower -match '^(tamir|servis|repair|service)$') {
+    $tNorm = $typeVal.Replace([string][char]0x0130, 'i').Replace([string][char]0x0131, 'i').ToLower().Trim().Replace([string][char]0x0307, '')
+    $tNorm = $tNorm.Replace([string][char]0x015F, 's').Replace([string][char]0x00E7, 'c').Replace([string][char]0x011F, 'g').Replace([string][char]0x00F6, 'o').Replace([string][char]0x00FC, 'u')
+    if ($tNorm -match '^(tamir|servis|repair|service)$') {
         $typeVal = 'REPAIR'
-    } elseif ($tLower -match '^(satis|satış|alim|alım|stok|sale|inventory|stock)$') {
+    } elseif ($tNorm -match '^(satis|alim|stok|sale|inventory|stock)$') {
         $typeVal = 'SALE'
     }
 
@@ -221,18 +248,19 @@ function CihazNormalle {
     foreach ($k in @('status', 'durum', 'state')) {
         if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $statusVal = "$($d.$k)"; break }
     }
-    $sLower = $statusVal.ToLower().Trim()
-    if ($sLower -match '^(bekliyor|beklemede|pending|yeni)$') {
+    $sNorm = $statusVal.Replace([string][char]0x0130, 'i').Replace([string][char]0x0131, 'i').ToLower().Trim().Replace([string][char]0x0307, '')
+    $sNorm = $sNorm.Replace([string][char]0x015F, 's').Replace([string][char]0x00E7, 'c').Replace([string][char]0x011F, 'g').Replace([string][char]0x00F6, 'o').Replace([string][char]0x00FC, 'u')
+    if ($sNorm -match '^(bekliyor|beklemede|pending|yeni)$') {
         $statusVal = 'PENDING'
-    } elseif ($sLower -match '^(islemde|işlemde|tamirde|in_progress|processing)$') {
+    } elseif ($sNorm -match '^(islemde|tamirde|in_progress|processing)$') {
         $statusVal = 'IN_PROGRESS'
-    } elseif ($sLower -match '^(tamamlandi|tamamlandı|hazir|hazır|completed|done)$') {
+    } elseif ($sNorm -match '^(tamamlandi|hazir|completed|done)$') {
         $statusVal = 'COMPLETED'
-    } elseif ($sLower -match '^(teslim|teslim_edildi|teslim edildi|delivered)$') {
+    } elseif ($sNorm -match '^(teslim|teslim_edildi|teslim edildi|delivered)$') {
         $statusVal = 'DELIVERED'
-    } elseif ($sLower -match '^(stokta|satilik|satılık|in_stock|available)$') {
+    } elseif ($sNorm -match '^(stokta|satilik|in_stock|available)$') {
         $statusVal = 'IN_STOCK'
-    } elseif ($sLower -match '^(satildi|satıldı|sold)$') {
+    } elseif ($sNorm -match '^(satildi|sold)$') {
         $statusVal = 'SOLD'
     }
 
@@ -297,8 +325,9 @@ function CihazNormalle {
         if ($d.$k -ne $null -and "$($d.$k)" -ne '') { $sifreVal = "$($d.$k)"; break }
     }
     if ($sifreVal -and $notesVal -notlike "*$sifreVal*") {
-        if ($notesVal) { $notesVal = "$notesVal (Şifre: $sifreVal)" }
-        else { $notesVal = "Şifre: $sifreVal" }
+        $sifreEtiket = [string][char]0x015E + 'ifre'
+        if ($notesVal) { $notesVal = "$notesVal ($sifreEtiket: $sifreVal)" }
+        else { $notesVal = "$sifreEtiket: $sifreVal" }
     }
 
     # price / fiyat / ucret / cost / amount / tutar
@@ -308,7 +337,8 @@ function CihazNormalle {
     }
     $priceNum = $null
     if ($priceVal -ne $null) {
-        $pStr = "$priceVal" -replace '[₺TLtl\s]', ''
+        $tlChar = [string][char]0x20BA
+        $pStr = ("$priceVal" -replace [regex]::Escape($tlChar), '' -replace '(?i)(tl|\s)', '')
         if ($pStr.Contains('.') -and $pStr.Contains(',')) {
             $pStr = $pStr.Replace('.', '').Replace(',', '.')
         } elseif ($pStr.Contains(',')) {
@@ -357,11 +387,18 @@ function CihazNormalle {
         if ([long]::TryParse("$rawUpdated", [ref]$parsedLongU)) {
             if ($parsedLongU -lt 100000000000L -and $parsedLongU -gt 0) { $parsedLongU = $parsedLongU * 1000L }
             $updatedEpoch = $parsedLongU
+        } else {
+            $parsedDateU = [datetime]::MinValue
+            if ([datetime]::TryParse("$rawUpdated", [ref]$parsedDateU)) {
+                $epochStart = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
+                $updatedEpoch = [long](($parsedDateU.ToUniversalTime() - $epochStart).TotalMilliseconds)
+            }
         }
     }
 
     return [pscustomobject]@{
         id = $finalId
+        _isSyntheticId = $isSynthetic
         type = $typeVal
         status = $statusVal
         brand = $brandVal
@@ -444,10 +481,29 @@ function CanliSunucuVeriCek {
     if ($kayitlar.Count -gt 0) {
         $canliYol = Join-Path $Ana 'from_live_server.json'
         if (-not (Test-Path $Ana)) { New-Item -ItemType Directory -Path $Ana -Force | Out-Null }
-        $kayitlar | ConvertTo-Json -Depth 5 | Set-Content -Path $canliYol -Encoding UTF8
+        ConvertTo-Json -InputObject @($kayitlar) -Depth 5 | Set-Content -Path $canliYol -Encoding UTF8
     }
 
-    return ,$kayitlar
+    return @($kayitlar.ToArray())
+}
+
+function MasaustuKlasorleri {
+    $liste = New-Object System.Collections.ArrayList
+    $trMasaustu = if ($env:USERPROFILE) { Join-Path $env:USERPROFILE ('Masa' + [string][char]0x00FC + 'st' + [string][char]0x00FC) } else { '' }
+    $adaylar = @(
+        [Environment]::GetFolderPath('Desktop'),
+        (Join-Path $env:USERPROFILE 'Desktop'),
+        $trMasaustu,
+        [Environment]::GetFolderPath('CommonDesktopDirectory'),
+        $(if ($env:OneDrive) { Join-Path $env:OneDrive 'Desktop' }),
+        $(if ($env:OneDrive -and $env:OneDrive -ne '') { Join-Path $env:OneDrive ('Masa' + [string][char]0x00FC + 'st' + [string][char]0x00FC) }),
+        $(if ($env:OneDriveConsumer) { Join-Path $env:OneDriveConsumer 'Desktop' }),
+        $(if ($env:OneDriveCommercial) { Join-Path $env:OneDriveCommercial 'Desktop' })
+    )
+    foreach ($d in $adaylar) {
+        if ($d -and (Test-Path -LiteralPath $d) -and -not $liste.Contains($d)) { [void]$liste.Add($d) }
+    }
+    return @($liste.ToArray())
 }
 
 function EskiDosyalariTara {
@@ -455,6 +511,9 @@ function EskiDosyalariTara {
 
     # Aday dizinler listesi
     $adayDizinler = New-Object System.Collections.Generic.List[string]
+    $indirilenlerTr = if ($env:USERPROFILE) { Join-Path $env:USERPROFILE ([string][char]0x0130 + 'ndirilenler') } else { '' }
+    $belgelerTr = if ($env:USERPROFILE) { Join-Path $env:USERPROFILE 'Belgeler' } else { '' }
+    $oneDriveDocsTr = if ($env:OneDrive) { Join-Path $env:OneDrive 'Belgeler' } else { '' }
     $standartDizinler = @(
         'C:\ozi',
         'C:\kuzgun',
@@ -463,20 +522,43 @@ function EskiDosyalariTara {
         (Join-Path $Ana 'data'),
         (Join-Path $env:LOCALAPPDATA 'ozi'),
         (Join-Path $env:APPDATA 'KuzgunCRM'),
-        (Join-Path $env:USERPROFILE 'KuzgunCRM')
+        (Join-Path $env:USERPROFILE 'KuzgunCRM'),
+        # Downloads & Documents
+        (Join-Path $env:USERPROFILE 'Downloads'),
+        $indirilenlerTr,
+        $(if ($env:OneDrive) { Join-Path $env:OneDrive 'Downloads' }),
+        [Environment]::GetFolderPath('MyDocuments'),
+        (Join-Path $env:USERPROFILE 'Documents'),
+        $belgelerTr,
+        $(if ($env:OneDrive) { Join-Path $env:OneDrive 'Documents' }),
+        $oneDriveDocsTr,
+        $(if ($env:OneDriveConsumer) { Join-Path $env:OneDriveConsumer 'Documents' }),
+        $(if ($env:OneDriveCommercial) { Join-Path $env:OneDriveCommercial 'Documents' })
     )
+    # ExeDir scanning (passed from launcher exe)
+    if ($ExeDir) {
+        $ExeDir = $ExeDir.TrimEnd('\', '/')
+        if (Test-Path -LiteralPath $ExeDir) {
+            try {
+                $isDriveRoot = [bool]($ExeDir -match '^[A-Za-z]:\\?$')
+                if (-not $isDriveRoot -and -not $adayDizinler.Contains($ExeDir)) {
+                    [void]$adayDizinler.Add($ExeDir)
+                }
+            } catch {}
+        }
+    }
     foreach ($d in $standartDizinler) {
-        if ($d -and (Test-Path $d) -and -not $adayDizinler.Contains($d)) { [void]$adayDizinler.Add($d) }
+        if ($d -and (Test-Path -LiteralPath $d) -and -not $adayDizinler.Contains($d)) { [void]$adayDizinler.Add($d) }
     }
 
     # Masaustu klasorleri ve alt klasorleri
     foreach ($desk in (MasaustuKlasorleri)) {
-        if ($desk -and (Test-Path $desk) -and -not $adayDizinler.Contains($desk)) {
+        if ($desk -and (Test-Path -LiteralPath $desk) -and -not $adayDizinler.Contains($desk)) {
             [void]$adayDizinler.Add($desk)
         }
         # Masaustundeki kuzgun veya ozi klasorleri
         try {
-            Get-ChildItem -Path $desk -Directory -ErrorAction SilentlyContinue | Where-Object {
+            Get-ChildItem -LiteralPath $desk -Directory -ErrorAction SilentlyContinue | Where-Object {
                 $_.Name -match '(?i)kuzgun|ozi|teknik|servis'
             } | ForEach-Object {
                 if (-not $adayDizinler.Contains($_.FullName)) { [void]$adayDizinler.Add($_.FullName) }
@@ -486,18 +568,18 @@ function EskiDosyalariTara {
         # Masaustu kisayollarindaki (.lnk) hedef klasorler
         try {
             $ws = New-Object -ComObject WScript.Shell
-            Get-ChildItem -Path $desk -File -ErrorAction SilentlyContinue | Where-Object {
+            Get-ChildItem -LiteralPath $desk -File -ErrorAction SilentlyContinue | Where-Object {
                 $_.Extension -ieq '.lnk' -and $_.Name -match '(?i)kuzgun|ozi|crm'
             } | ForEach-Object {
                 try {
                     $sc = $ws.CreateShortcut($_.FullName)
                     if ($sc.TargetPath) {
                         $targetDir = Split-Path $sc.TargetPath -Parent
-                        if ($targetDir -and (Test-Path $targetDir) -and -not $adayDizinler.Contains($targetDir)) {
+                        if ($targetDir -and (Test-Path -LiteralPath $targetDir) -and -not $adayDizinler.Contains($targetDir)) {
                             [void]$adayDizinler.Add($targetDir)
                         }
                     }
-                    if ($sc.WorkingDirectory -and (Test-Path $sc.WorkingDirectory) -and -not $adayDizinler.Contains($sc.WorkingDirectory)) {
+                    if ($sc.WorkingDirectory -and (Test-Path -LiteralPath $sc.WorkingDirectory) -and -not $adayDizinler.Contains($sc.WorkingDirectory)) {
                         [void]$adayDizinler.Add($sc.WorkingDirectory)
                     }
                 } catch {}
@@ -505,11 +587,18 @@ function EskiDosyalariTara {
         } catch {}
     }
 
-    # 1. JSON dosyalarini tara
+    # 1. JSON dosyalarini tara (tum zarf formatlarini cozer: array, .devices, .data, .records, .items, .backup.devices, tek cihaz)
     foreach ($d in $adayDizinler) {
         try {
-            $jsonFiles = Get-ChildItem -Path $d -File -ErrorAction SilentlyContinue | Where-Object {
-                $_.Extension -ieq '.json' -and $_.Name -match '(?i)(kuzgun|device|cihaz|musteri|backup|yedek|data)'
+            $isSharedDir = [bool]($d -match '(?i)[\\/](downloads|belgeler|documents|desktop|masa[u\u00FC]st[u\u00FC])$' -or $d -ieq $env:USERPROFILE -or $d -ieq [Environment]::GetFolderPath('CommonDesktopDirectory'))
+            $isExeOrKuzgunDir = [bool](($d -ieq $ExeDir -and -not $isSharedDir) -or $d -match '(?i)kuzgun|ozi')
+            $jsonFiles = Get-ChildItem -LiteralPath $d -File -ErrorAction SilentlyContinue | Where-Object {
+                if ($_.Extension -ine '.json') { return $false }
+                if ($_.Name -match '(?i)^(package(-lock)?|appsscript|tsconfig|launch)\.json$') { return $false }
+                if ($_.Length -gt 20MB) { return $false }
+                if ($_.Name -match '(?i)(kuzgun|device|cihaz|musteri|backup|yedek|data|crm|export|servis|tamir|\d{4}-\d{2}-\d{2})') { return $true }
+                if ($isExeOrKuzgunDir) { return $true }
+                return $false
             }
             foreach ($jf in $jsonFiles) {
                 try {
@@ -517,12 +606,30 @@ function EskiDosyalariTara {
                     if ($raw -and $raw.Trim().Length -gt 2) {
                         $parsed = $raw | ConvertFrom-Json -ErrorAction SilentlyContinue
                         $arr = @()
-                        if ($parsed -is [System.Array]) { $arr = $parsed }
-                        elseif ($parsed.devices -is [System.Array]) { $arr = $parsed.devices }
-                        elseif ($parsed.data -is [System.Array]) { $arr = $parsed.data }
+                        if ($parsed -is [System.Array]) {
+                            $arr = $parsed
+                        } elseif ($parsed.devices -is [System.Array]) {
+                            $arr = $parsed.devices
+                        } elseif ($parsed.data -is [System.Array]) {
+                            $arr = $parsed.data
+                        } elseif ($parsed.records -is [System.Array]) {
+                            $arr = $parsed.records
+                        } elseif ($parsed.items -is [System.Array]) {
+                            $arr = $parsed.items
+                        } elseif ($parsed.backup -and $parsed.backup.devices -is [System.Array]) {
+                            $arr = $parsed.backup.devices
+                        } elseif ($parsed -and ($parsed.musteri_adi -or $parsed.customer_name -or $parsed.musteri -or $parsed.customer -or
+                                               $parsed.brand -or $parsed.marka -or $parsed.cihaz_marka -or
+                                               $parsed.model -or $parsed.cihaz_model -or $parsed.cihaz -or
+                                               $parsed.serial_number -or $parsed.seri_no -or $parsed.imei -or $parsed.imei_no -or
+                                               $parsed.telefon -or $parsed.customer_phone)) {
+                            $arr = @($parsed)
+                        }
+                        $occIdx = 0
                         foreach ($it in $arr) {
-                            $norm = CihazNormalle $it
+                            $norm = CihazNormalle $it $occIdx
                             if ($norm) { [void]$bulunanlar.Add($norm) }
+                            $occIdx++
                         }
                     }
                 } catch {}
@@ -533,20 +640,22 @@ function EskiDosyalariTara {
     # 2. SQLite veritabanlarini tara (*.db, *.sqlite, *.sqlite3)
     foreach ($d in $adayDizinler) {
         try {
-            $dbFiles = Get-ChildItem -Path $d -File -ErrorAction SilentlyContinue | Where-Object {
+            $dbFiles = Get-ChildItem -LiteralPath $d -File -ErrorAction SilentlyContinue | Where-Object {
                 $_.Extension -match '(?i)^\.(db|sqlite|sqlite3)$'
             }
             foreach ($db in $dbFiles) {
                 if (KomutVarMi 'python' -or KomutVarMi 'python3') {
                     $pyCmd = if (KomutVarMi 'python') { 'python' } else { 'python3' }
-                    $pyCode = "import sqlite3, json, sys; conn = sqlite3.connect(sys.argv[1]); cur = conn.cursor(); cur.execute(\`"SELECT name FROM sqlite_master WHERE type='table';\`"); tables = [r[0] for r in cur.fetchall() if not r[0].startswith('sqlite_')]; out = []; [out.extend([dict(zip([c[1] for c in cur.execute(f'PRAGMA table_info({t});').fetchall()], row)) for row in cur.execute(f'SELECT * FROM {t};').fetchall()]) for t in tables]; conn.close(); print(json.dumps(out, ensure_ascii=False))"
+                    $pyCode = 'import sqlite3, json, sys; conn = sqlite3.connect(sys.argv[1]); cur = conn.cursor(); cur.execute("SELECT name FROM sqlite_master WHERE type=''table'';"); tables = [r[0] for r in cur.fetchall() if not r[0].startswith("sqlite_")]; out = []; [out.extend([dict(zip([c[1] for c in cur.execute(''PRAGMA table_info("'' + t.replace(''"'', ''""'') + ''");'').fetchall()], [(v.decode(''utf-8'', errors=''replace'') if isinstance(v, bytes) else v) for v in row])) for row in cur.execute(''SELECT * FROM "'' + t.replace(''"'', ''""'') + ''";'').fetchall()]) for t in tables]; conn.close(); print(json.dumps(out, ensure_ascii=True, default=str))'
                     try {
-                        $res = & $pyCmd -c $pyCode $db.FullName 2>&1 | Out-String
+                        $res = $pyCode | & $pyCmd - $db.FullName 2>&1 | Out-String
                         if ($res -and $res.Trim().StartsWith('[')) {
                             $items = $res | ConvertFrom-Json -ErrorAction SilentlyContinue
+                            $occIdx = 0
                             foreach ($it in $items) {
-                                $norm = CihazNormalle $it
+                                $norm = CihazNormalle $it $occIdx
                                 if ($norm) { [void]$bulunanlar.Add($norm) }
+                                $occIdx++
                             }
                         }
                     } catch {}
@@ -561,9 +670,9 @@ function EskiDosyalariTara {
         (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data\Default\Local Storage\leveldb')
     )
     foreach ($ldbDir in $levelDbDirs) {
-        if (Test-Path $ldbDir) {
+        if (Test-Path -LiteralPath $ldbDir) {
             try {
-                $ldbFiles = Get-ChildItem -Path $ldbDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '(?i)^\.(ldb|log)$' }
+                $ldbFiles = Get-ChildItem -LiteralPath $ldbDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '(?i)^\.(ldb|log)$' }
                 foreach ($lf in $ldbFiles) {
                     try {
                         $txt = [System.IO.File]::ReadAllText($lf.FullName, [System.Text.Encoding]::GetEncoding(28591))
@@ -573,9 +682,11 @@ function EskiDosyalariTara {
                             foreach ($m in $matches) {
                                 try {
                                     $parsed = $m.Value | ConvertFrom-Json -ErrorAction SilentlyContinue
+                                    $occIdx = 0
                                     foreach ($it in $parsed) {
-                                        $norm = CihazNormalle $it
+                                        $norm = CihazNormalle $it $occIdx
                                         if ($norm) { [void]$bulunanlar.Add($norm) }
+                                        $occIdx++
                                     }
                                 } catch {}
                             }
@@ -586,7 +697,7 @@ function EskiDosyalariTara {
         }
     }
 
-    return ,$bulunanlar
+    return @($bulunanlar.ToArray())
 }
 
 function VeriMigrasyonYurut {
@@ -607,26 +718,60 @@ function VeriMigrasyonYurut {
             $rawM = [System.IO.File]::ReadAllText($mevcutMigFile, [System.Text.Encoding]::UTF8)
             $parsedM = $rawM | ConvertFrom-Json -ErrorAction SilentlyContinue
             if ($parsedM) {
-                foreach ($it in $parsedM) {
-                    $norm = CihazNormalle $it
+                $occIdx = 0
+                foreach ($it in @($parsedM)) {
+                    $norm = CihazNormalle $it $occIdx
                     if ($norm) { $mevcutMigVerileri += $norm }
+                    $occIdx++
                 }
             }
         } catch {}
     }
 
     # 4. MERGE & DEDUPLICATE (id bazinda)
+    # Protect explicit IDs from colliding synthetic IDs, disambiguate colliding synthetic IDs
     $uniqueMap = @{}
-    foreach ($item in ($canliVeriler + $dosyaVerileri + $mevcutMigVerileri)) {
+    foreach ($item in (@($canliVeriler) + @($dosyaVerileri) + @($mevcutMigVerileri))) {
         if (-not $item) { continue }
         $k = "$($item.id)"
         if (-not $uniqueMap.ContainsKey($k)) {
             $uniqueMap[$k] = $item
         } else {
             $cur = $uniqueMap[$k]
-            if ($item.updated_at -ge $cur.updated_at) {
+            # If current is synthetic and new is explicit, explicit wins
+            if ($cur._isSyntheticId -and -not $item._isSyntheticId) {
                 $uniqueMap[$k] = $item
+            } elseif (-not $cur._isSyntheticId -and $item._isSyntheticId) {
+                # New item is synthetic but ID already taken by explicit record -> re-assign synthetic ID
+                $newId = [int]$item.id
+                while ($uniqueMap.ContainsKey("$newId")) { $newId++ }
+                $item.id = $newId
+                $uniqueMap["$newId"] = $item
+            } else {
+                # Both synthetic or both explicit
+                if ($cur._isSyntheticId -and $item._isSyntheticId) {
+                    # Compare content: if content differs, disambiguate
+                    $cStr = "$($cur.customer_name)|$($cur.brand)|$($cur.model)|$($cur.serial_number)|$($cur.imei)"
+                    $iStr = "$($item.customer_name)|$($item.brand)|$($item.model)|$($item.serial_number)|$($item.imei)"
+                    if ($cStr -ne $iStr) {
+                        $newId = [int]$item.id
+                        while ($uniqueMap.ContainsKey("$newId")) { $newId++ }
+                        $item.id = $newId
+                        $uniqueMap["$newId"] = $item
+                    } elseif ($item.updated_at -ge $cur.updated_at) {
+                        $uniqueMap[$k] = $item
+                    }
+                } elseif ($item.updated_at -ge $cur.updated_at) {
+                    $uniqueMap[$k] = $item
+                }
             }
+        }
+    }
+
+    # Clean internal _isSyntheticId tag before export
+    foreach ($v in $uniqueMap.Values) {
+        if ($v.PSObject.Properties['_isSyntheticId']) {
+            $v.PSObject.Properties.Remove('_isSyntheticId')
         }
     }
 
@@ -635,20 +780,20 @@ function VeriMigrasyonYurut {
     # 5. GUVENLI YEDEKLEME: Asla veri silme, dokunmadan once yedekle!
     $tarihDamgasi = Get-Date -Format 'yyyyMMdd_HHmmss'
     $yedekDizin = Join-Path $Ana ("yedekler\otomatik_migrasyon_$tarihDamgasi")
-    if (-not (Test-Path $yedekDizin)) { New-Item -ItemType Directory -Path $yedekDizin -Force | Out-Null }
+    if (-not (Test-Path -LiteralPath $yedekDizin)) { New-Item -ItemType Directory -Path $yedekDizin -Force | Out-Null }
 
     # Eski html ve config'i yedekle
     $yerelHtml = Join-Path $Ana 'Kuzgun_CRM.html'
-    if (Test-Path $yerelHtml) {
-        Copy-Item -Path $yerelHtml -Destination (Join-Path $yedekDizin 'Kuzgun_CRM_eski.html') -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $yerelHtml) {
+        Copy-Item -LiteralPath $yerelHtml -Destination (Join-Path $yedekDizin 'Kuzgun_CRM_eski.html') -Force -ErrorAction SilentlyContinue
     }
     $mevcutConfig = ConfigYol
-    if (Test-Path $mevcutConfig) {
-        Copy-Item -Path $mevcutConfig -Destination (Join-Path $yedekDizin 'kurulum_eski.json') -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $mevcutConfig) {
+        Copy-Item -LiteralPath $mevcutConfig -Destination (Join-Path $yedekDizin 'kurulum_eski.json') -Force -ErrorAction SilentlyContinue
     }
 
     if ($siraliListe.Count -gt 0) {
-        $jsonStr = $siraliListe | ConvertTo-Json -Depth 5
+        $jsonStr = ConvertTo-Json -InputObject @($siraliListe) -Depth 5
         [System.IO.File]::WriteAllText($mevcutMigFile, $jsonStr, (New-Object System.Text.UTF8Encoding($false)))
 
         $backupCopy = Join-Path $yedekDizin "otomatik_migrasyon_$tarihDamgasi.json"
@@ -853,7 +998,7 @@ function Asama_OtomatikKurulum {
                 Uyari '    [!] Google Apps Script API henuz acik degil. Ayar sayfasi aciliyor...'
                 Start-Process 'https://script.google.com/home/usersettings'
                 $cevapApi = Read-Host '    Acilan sayfada "Google Apps Script API" anahtarini ACIK yapip Enter''a basin ([C] Cikis)'
-                if ($cevapApi -match '^[CcçÇ]$') { exit 0 }
+                if ($cevapApi -match '^[Cc\u00E7\u00C7]$' -or $cevapApi -eq [string][char]0x00E7 -or $cevapApi -eq [string][char]0x00C7) { exit 0 }
                 Start-Sleep -Seconds 2
             } elseif ($cikarilmis -and $apiDeneme -eq 1) {
                 # Eski scriptId gecersiz veya silinmis olabilir; sifirdan olusturmayi dene
@@ -1007,17 +1152,6 @@ function Asama4_Tamam {
     }
 }
 
-function MasaustuKlasorleri {
-    $liste = New-Object System.Collections.ArrayList
-    foreach ($d in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:USERPROFILE 'Desktop'),
-                     $(if ($env:OneDrive) { Join-Path $env:OneDrive 'Desktop' }),
-                     $(if ($env:OneDriveConsumer) { Join-Path $env:OneDriveConsumer 'Desktop' }),
-                     $(if ($env:OneDriveCommercial) { Join-Path $env:OneDriveCommercial 'Desktop' }))) {
-        if ($d -and (Test-Path $d) -and -not $liste.Contains($d)) { [void]$liste.Add($d) }
-    }
-    return ,$liste
-}
-
 function EskiKurulumTemizle {
     param([string]$HedefYedekDizin = '')
     # Eski surumlerin masaustu dosyalari / 127.0.0.1 yerel sunucusu yeni surumu golgeliyor; yedekleyip tasi (asla silme!)
@@ -1074,7 +1208,7 @@ function KisayolOlustur {
     }
 
     if ($cihazlar -and @($cihazlar).Count -gt 0) {
-        $devJson = @($cihazlar) | ConvertTo-Json -Depth 5 -Compress
+        $devJson = ConvertTo-Json -InputObject @($cihazlar) -Depth 5 -Compress
         $html = $html.Replace("const EMBED_DEVICES = [];", "const EMBED_DEVICES = " + $devJson + ";")
     }
 
@@ -1133,7 +1267,7 @@ function OtomatikCalistir {
             Uyari '  Node.js otomatik kurulamadi. Indirme sayfasi aciliyor...'
             Start-Process 'https://nodejs.org/'
             $cevapNode = Read-Host '  Node.js kurduktan sonra Enter''a basin  [C] Cikis'
-            if ($cevapNode -match '^[CcçÇ]$') { exit 0 }
+            if ($cevapNode -match '^[Cc\u00E7\u00C7]$' -or $cevapNode -eq [string][char]0x00E7 -or $cevapNode -eq [string][char]0x00C7) { exit 0 }
             PathYenile
             if (-not (KomutVarMi 'node')) {
                 Hata '  Node.js hala bulunamadi. Manuel kilavuza geciliyor.'
@@ -1259,7 +1393,7 @@ function TestModu {
         # TEST: EMBED_DEVICES enjeksiyonu
         $testDevList = @($normDev)
         $migTestFile = Join-Path $script:Ana 'migrated_devices.json'
-        [System.IO.File]::WriteAllText($migTestFile, ($testDevList | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::WriteAllText($migTestFile, (ConvertTo-Json -InputObject @($testDevList) -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
         DosyalariHazirla -erisim 'ANYONE_ANONYMOUS'
         $indexHtml = Get-Content (Join-Path $testKlasor 'index.html') -Raw
         if ($indexHtml -match 'const EMBED_DEVICES = \[\{.*Mehmet Demir.*\}\];') {
@@ -1355,7 +1489,7 @@ try {
         Baslik 'ONCEKI KURULUM BULUNDU'
         if ($onceki.Url) { Satir White ('    ADRES : ' + $onceki.Url) }
         $cevap = Read-Host '  [G] Guncelle (Enter)  [Y] Yeni kurulum (sifirdan)  [C] Cikis'
-        if ($cevap -match '^[CcçÇ]$') { exit 0 }
+        if ($cevap -match '^[Cc\u00E7\u00C7]$' -or $cevap -eq [string][char]0x00E7 -or $cevap -eq [string][char]0x00C7) { exit 0 }
         if ($cevap -match '^[Yy]$') { $Sifirdan = $true }
     }
 

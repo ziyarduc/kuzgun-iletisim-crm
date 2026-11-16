@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -10,11 +10,11 @@ using System.Threading;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Kuzgun Iletisim CRM Kurulum")]
-[assembly: AssemblyDescription("Tek tikla kurulum, guncelleme ve yonetim sihirbazi - Kuzgun Iletisim CRM v2.3")]
+[assembly: AssemblyDescription("Tek tikla kurulum, guncelleme ve yonetim sihirbazi - Kuzgun Iletisim CRM v2.3.1")]
 [assembly: AssemblyProduct("Kuzgun Iletisim CRM")]
 [assembly: AssemblyCompany("Kuzgun Iletisim")]
-[assembly: AssemblyVersion("2.3.0.0")]
-[assembly: AssemblyFileVersion("2.3.0.0")]
+[assembly: AssemblyVersion("2.3.1.0")]
+[assembly: AssemblyFileVersion("2.3.1.0")]
 [assembly: NeutralResourcesLanguage("tr-TR")]
 
 namespace KuzgunCrmSetup
@@ -136,9 +136,17 @@ namespace KuzgunCrmSetup
             ExtractPayloadFiles(baseDir);
 
             string ps = FindPowerShellExe();
+            string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? string.Empty;
+            exeDir = exeDir.TrimEnd('\\', '/');
+
             StringBuilder sb = new StringBuilder();
             sb.Append("-NoProfile -ExecutionPolicy Bypass -File ");
             sb.Append(Quote(Path.Combine(baseDir, "Kurulum.ps1")));
+            if (!string.IsNullOrEmpty(exeDir))
+            {
+                sb.Append(" -ExeDir ");
+                sb.Append(Quote(exeDir));
+            }
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -218,7 +226,43 @@ namespace KuzgunCrmSetup
             {
                 string name = Payload[i];
                 byte[] data = ReadResource(asm, "payload." + name);
-                WriteRetry(Path.Combine(baseDir, name), data);
+                if (name.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (data == null || data.Length < 3 || data[0] != 0xEF || data[1] != 0xBB || data[2] != 0xBF)
+                    {
+                        byte[] raw = data ?? new byte[0];
+                        byte[] bomData = new byte[raw.Length + 3];
+                        bomData[0] = 0xEF;
+                        bomData[1] = 0xBB;
+                        bomData[2] = 0xBF;
+                        Buffer.BlockCopy(raw, 0, bomData, 3, raw.Length);
+                        data = bomData;
+                    }
+                }
+                string destPath = Path.Combine(baseDir, name);
+                WriteRetry(destPath, data);
+
+                if (name.Equals("Kurulum.ps1", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!File.Exists(destPath))
+                    {
+                        throw new FileNotFoundException("Cikarilan Kurulum.ps1 bulunamadi: " + destPath);
+                    }
+                    FileInfo fi = new FileInfo(destPath);
+                    if (fi.Length < 3)
+                    {
+                        throw new InvalidDataException("Cikarilan Kurulum.ps1 bos veya cok kucuk: " + destPath);
+                    }
+                    byte[] check = new byte[3];
+                    using (FileStream fs = File.OpenRead(destPath))
+                    {
+                        int read = fs.Read(check, 0, 3);
+                        if (read < 3 || check[0] != 0xEF || check[1] != 0xBB || check[2] != 0xBF)
+                        {
+                            throw new InvalidDataException("Kurulum.ps1 UTF-8 BOM ile yazilamadi: " + destPath);
+                        }
+                    }
+                }
             }
         }
 
@@ -404,7 +448,7 @@ namespace KuzgunCrmSetup
                 {
                     det.HasCloudConfig = true;
                     string json = File.ReadAllText(cfgFile);
-                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.3.0";
+                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.3.1";
                     det.CloudUrl = SimpleJsonExtract(json, "url");
                 }
 
@@ -459,7 +503,7 @@ namespace KuzgunCrmSetup
                 det.TitleColor = Color.FromArgb(14, 116, 144);
                 det.SummaryDetail = string.Format(
                     "Sistemde aktif Kuzgun CRM ({0}) bulundu. Tek tikla guncelleme yapildiginda kodlar yenilenecek, Google E-Tablo veritabaniniz ve musterileriniz aynen korunacaktir.",
-                    det.CloudVersion ?? "v2.3.0");
+                    det.CloudVersion ?? "v2.3.1");
             }
             else if (det.HasLegacyOzi || det.HasLegacyAppData || det.HasDesktopShortcuts)
             {
@@ -567,7 +611,7 @@ namespace KuzgunCrmSetup
             _lblSubtitle.AutoSize = true;
 
             _lblVersion = new Label();
-            _lblVersion.Text = "v2.3.0";
+            _lblVersion.Text = "v2.3.1";
             _lblVersion.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
             _lblVersion.ForeColor = Color.FromArgb(252, 211, 77);
             _lblVersion.Location = new Point(585, 25);
@@ -715,7 +759,7 @@ namespace KuzgunCrmSetup
                 _btnStart.Text = "Tek Tıkla Kur";
             }
 
-            AppendLog("Kuzgun CRM v2.3.0 Kurulum ve Yonetim Sihirbazi hazir.");
+            AppendLog("Kuzgun CRM v2.3.1 Kurulum ve Yonetim Sihirbazi hazir.");
             AppendLog("Durum: " + det.SummaryTitle);
         }
 
@@ -754,9 +798,17 @@ namespace KuzgunCrmSetup
                 });
 
                 string ps = Program.FindPowerShellExe();
+                string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? string.Empty;
+                exeDir = exeDir.TrimEnd('\\', '/');
+
                 StringBuilder sb = new StringBuilder();
                 sb.Append("-NoProfile -ExecutionPolicy Bypass -File ");
                 sb.Append(Program.Quote(Path.Combine(baseDir, "Kurulum.ps1")));
+                if (!string.IsNullOrEmpty(exeDir))
+                {
+                    sb.Append(" -ExeDir ");
+                    sb.Append(Program.Quote(exeDir));
+                }
 
                 if (_cliArgs != null)
                 {

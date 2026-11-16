@@ -342,6 +342,50 @@ async function bootCustom(gas, { cloud = true, localStore = {}, embedDevices = n
     ok(replaceRes.safetyBackup && replaceRes.safetyBackup.name.includes('kuzgun-crm-oncesi-'), 'replaceAllDevices öncesi Drive güvenlik yedeği alındı: ' + (replaceRes.safetyBackup && replaceRes.safetyBackup.name));
   }
 
+  console.log('\n=== TEST 5: Comprehensive Adversarial Multi-Envelope & Schema Edge Cases (REPRO 1-5) ===');
+  {
+    const gas = makeGas();
+
+    // 5.1 Single-object EMBED_DEVICES resilience (PS 5.1 unrolling bug simulation)
+    const singleObjEmbed = { id: 999, brand: 'Samsung', model: 'Galaxy S24', customer_name: 'Tekil Kayit' };
+    const wSingle = await bootCustom(gas, {
+      cloud: false,
+      localStore: {},
+      customHtml: fs.readFileSync(R + 'Kuzgun_Iletisim_CRM.html', 'utf8')
+        .replace('const EMBED_DEVICES = [];', 'const EMBED_DEVICES = ' + JSON.stringify(singleObjEmbed) + ';')
+    });
+    const appSingle = vm_(wSingle);
+    await sleep(200);
+    ok(appSingle.devices.length === 1 && appSingle.devices[0].id === 999,
+      'EMBED_DEVICES tek nesne (object) olarak enjekte edilse bile unpackEnvelope ile algılandı ve demoDevices ezmedi');
+
+    // 5.2 Legacy records without ID imported through importDevices
+    const noIdBatch = [
+      { musteri_adi: 'Ali Can', marka: 'Xiaomi', model: 'Note 12', fiyat: '1.450,50 ₺' },
+      { musteri_adi: 'Veli Han', marka: 'Apple', model: 'iPhone 13', fiyat: '32.000 TL' }
+    ];
+    const impRes = gas.ctx.importDevices('kuzgun2024', noIdBatch, false);
+    ok(impRes && impRes.added === 2, 'ID alanı olmayan kayıtlar importDevices tarafından düşürülmedi, eklendi: ' + (impRes && impRes.added));
+    const sheetDevices = gas.ctx.listDevices('kuzgun2024');
+    ok(sheetDevices.length === 2 && sheetDevices[0].customer_name === 'Ali Can' && sheetDevices[0].id,
+      'ID alanı olmayan kayıtlara deterministik ID atandı ve listDevices ile okundu');
+
+    // 5.3 Turkish "satış" / "alım" and id: 0
+    const turkishBatch = [
+      { id: 0, marka: 'Apple', model: 'iPhone 8' },
+      { id: 801, tur: 'satış', durum: 'satılık', marka: 'Samsung', model: 'A32' },
+      { id: 802, tur: 'alım', durum: 'stokta', marka: 'Xiaomi', model: '11T' }
+    ];
+    gas.ctx.importDevices('kuzgun2024', turkishBatch, false);
+    const readTurkish = gas.ctx.listDevices('kuzgun2024');
+    const d0 = readTurkish.find(d => String(d.id) === '0');
+    const d801 = readTurkish.find(d => String(d.id) === '801');
+    const d802 = readTurkish.find(d => String(d.id) === '802');
+    ok(d0 !== undefined, 'id: 0 olan kayıt Sheet içine kaydedildi ve okundu (düşürülmedi)');
+    ok(d801 && d801.type === 'SALE', 'tur: "satış" olan kayıt type: SALE olarak normalize edildi');
+    ok(d802 && d802.type === 'SALE', 'tur: "alım" olan kayıt type: SALE olarak normalize edildi');
+  }
+
   console.log('\n======================================================');
   if (fails > 0) {
     console.error(`E2E MIGRATION: ${fails} TEST BAŞARISIZ!`);

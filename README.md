@@ -1,4 +1,4 @@
-# Kuzgun İletişim CRM (v2.3.0)
+# Kuzgun İletişim CRM (v2.3.1)
 
 Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşteri ve Cihaz Takip) sistemi.
 
@@ -24,13 +24,13 @@ Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşt
 
 | Dosya | Açıklama |
 |---|---|
-| `KuzgunCRM_Kurulum.exe` | **Prod kurulum (tek dosya v2.3.0 WinForms GUI).** Her şey gömülü (sihirbaz + kaynak kodlar); çift tıkla çalışır, grafik arayüzle sistemi kurar/günceller. |
+| `KuzgunCRM_Kurulum.exe` | **Prod kurulum (tek dosya v2.3.1 WinForms GUI).** Her şey gömülü (sihirbaz + kaynak kodlar); çift tıkla çalışır, grafik arayüzle sistemi kurar/günceller. |
 | `KuzgunCRM_Kurulum.cmd` | Çift tıklayıcı alternatif (EXE üretilemezse kaynak klasörden çalışır). |
-| `Kuzgun_Iletisim_CRM.html` | Arayüz v2.3.0. Hem yerel dosya olarak (yerel mod) hem de Apps Script üzerinde (bulut modu) aynı dosya çalışır. `EMBED_DEVICES` desteği içerir. |
+| `Kuzgun_Iletisim_CRM.html` | Arayüz v2.3.1. Hem yerel dosya olarak (yerel mod) hem de Apps Script üzerinde (bulut modu) aynı dosya çalışır. `EMBED_DEVICES` desteği içerir. |
 | `Code.gs` | Google Apps Script backend: Google Sheets üzerinde CRUD, PIN doğrulama, formül koruması, Drive yedek listeleme ve geri yükleme. |
 | `appsscript.json` | Apps Script manifesti (saat dilimi, V8, web uygulaması erişim ayarları). |
-| `Kurulum.ps1` | Sihirbazın kaynağı v2.3.0 (bilgilendirme + gereksinim + canlı 127.0.0.1 probe + SQLite/LevelDB migrasyon + temiz çıkış). |
-| `exe\` | EXE üretim kaynakları: `Program.cs` (WinForms GUI sihirbazı v2.3.0) + `Uret-Exe.ps1` (derleme betiği). |
+| `Kurulum.ps1` | Sihirbazın kaynağı v2.3.1 (bilgilendirme + gereksinim + canlı 127.0.0.1 probe + SQLite/LevelDB migrasyon + temiz çıkış). |
+| `exe\` | EXE üretim kaynakları: `Program.cs` (WinForms GUI sihirbazı v2.3.1) + `Uret-Exe.ps1` (derleme betiği). |
 
 ## Kurulum
 
@@ -39,7 +39,7 @@ Kuzgun İletişim (Oğuzhan Güler) için özel olarak geliştirilen CRM (Müşt
 En kolay yol: bu deponun **Releases** bölümünden veya doğrudan ana dizinden **`KuzgunCRM_Kurulum.exe`** dosyasını indirin ve **çift tıklayın**.
 
 Hiçbir komut satırı ekranına ihtiyaç duymadan modern grafik arayüzle tam otomatik olarak çalışır:
-* **Önceki Kurulum Algılama & Veri Migrasyonu:** Bilgisayarınızda (`%LOCALAPPDATA%\KuzgunCRM`), `C:\ozi` klasöründe, masaüstü kısayollarında veya çalışan eski yerel sunucularda (127.0.0.1) önceki verileriniz varsa otomatik keşfeder; mevcut verilerinizi kayıpsız olarak yeni sürüme (v2.3.0) aktarır.
+* **Önceki Kurulum Algılama & Veri Migrasyonu:** Bilgisayarınızda (`%LOCALAPPDATA%\KuzgunCRM`), `C:\ozi` klasöründe, masaüstü kısayollarında veya çalışan eski yerel sunucularda (127.0.0.1) önceki verileriniz varsa otomatik keşfeder; mevcut verilerinizi kayıpsız olarak yeni sürüme (v2.3.1) aktarır.
 * **Sıfırdan Kurulum:** İlk kez çalıştırılıyorsa gerekirse Node.js ve `clasp` aracını kurar, Google hesabınızla eşleşir, Apps Script projesini ve web yayınını otomatik oluşturur.
 * **İlk Girişte Otomatik Google Hesabı Eşleme:** Kurulum biter bitmez CRM açılır, varsayılan PIN ile otomatik giriş yapar, Google hesabınızı (`Session`), E-Tablo veritabanınızı ve Günlük Drive Yedeğini (her gece 03:00) otomatik olarak eşler.
 
@@ -133,6 +133,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File exe\Uret-Exe.ps1
 Derleme `.NET Framework`'ün `csc.exe`'siyle yapılır (her Windows'ta vardır; ek yük gerekmez), ikon programla üretilir ve betik sonunda EXE'yi kendi `-Test`'inden geçirir. Çıktı: `KuzgunCRM_Kurulum.exe` (yaklaşık 100 KB, tüm dosyalar gömülü). `-TestiAtla` doğrulamayı atlar.
 
 EXE çalıştığında gömülü dosyaları `%LOCALAPPDATA%\KuzgunCRM\kaynak\` altına açar ve `Kurulum.ps1`'i Windows PowerShell ile başlatır; EXE'ye verilen tüm mod argümanları sihirbaza aynen iletilir, konsol UTF-8'e (`chcp 65001`) ayarlanır. Bu nedenle `Program.cs`/`Uret-Exe.ps1` değişikliklerinde EXE'yi yeniden üretmeyi unutmayın — sihirbaz kodu EXE'nin içindedir.
+
+### v2.3.1 Güncelleme Notları (PowerShell 5.1 & Genişletilmiş Yerel JSON Yedek Migrasyonu)
+* **Windows PowerShell 5.1 Parser & UTF-8 BOM Uyumluluğu:** Windows PowerShell 5.1'in varsayılan ANSI (Windows-1254/1252) kod sayfası altında UTF-8 BOM olmayan betiklerde para birimi simgesi (`₺`) ve Türkçe karakter baytlarını tırnak işareti (`0x82` -> `'`) olarak yorumlayıp sözdizimi hatası (`Unexpected token 'TLtl\s]'`, `Missing closing '}'`) vermesi tamamen giderildi. `Kurulum.ps1` gövdesi yüzde yüz saf ASCII karakterlerle (`[char]0x20BA`, `[char]0x...` Türkçe harf normalizasyonu) donatıldı ve dosya UTF-8 BOM (`EF BB BF`) ile kaydedildi.
+* **C# WinForms Yükleyici (`exe/Program.cs`) BOM Güvencesi:** Yükleyici EXE'nin diske çıkardığı `.ps1` dosyalarının her koşulda UTF-8 BOM ile yazılması zorunlu kılındı ve disk doğrulama kontrolü eklendi.
+* **Çalıştırılan EXE Klasörü (`-ExeDir`) Aktarımı:** `KuzgunCRM_Kurulum.exe`'nin çalıştırıldığı dizin (`AppDomain.CurrentDomain.BaseDirectory`), sondaki ters eğik çizgi kaçış hataları önlenerek `Kurulum.ps1`'e `-ExeDir` parametresiyle aktarılmaya başlandı.
+* **Genişletilmiş Yerel `.json` Yedek Keşfi ve Migrasyon:** Kullanıcının bilgisayarındaki `İndirilenler` (`Downloads`), `Belgeler` (`Documents`), `Masaüstü` (`Desktop` / `Masaüstü` / `CommonDesktopDirectory`), OneDrive klasörleri ve yükleyici EXE'nin yanına koyduğu tüm yerel `.json` yedek dosyaları otomatik taranıp içeri aktarılır.
+* **Evrensel JSON Zarf Desteği:** Yedek dosyalarındaki tüm zarf formatları (`[...]`, `.devices`, `.data`, `.records`, `.items`, `.backup.devices`, tek cihaz nesnesi) `Kurulum.ps1`, `Code.gs` ve `Kuzgun_Iletisim_CRM.html` genelinde eksiksiz çözümlenir.
+* **Deterministik Yedek ID Üretimi:** Açıkça `id` alanı bulunmayan eski yedek kayıtları için kararlı alanlardan deterministik pozitif tamsayı ID üretilerek hiçbir kaydın atlanmaması sağlandı.
 
 ## Masaüstü kısayolu, dosyadan açılış ve migrasyon (v2.3)
 - Kurulum, masaüstüne **Kuzgun CRM.lnk** (adresi gömülü yerel kopya) ve **Kuzgun CRM (Bulut).url** kısayollarını ekler; OneDrive masaüstünü de dener. Eski sürümün masaüstü/başlangıç dosyaları `%LOCALAPPDATA%\KuzgunCRM\eski_masaustu_*` klasörüne yedeklenip taşınır, eski 127.0.0.1 yerel sunucusu durdurulmadan önce canlı veriler çekilir.

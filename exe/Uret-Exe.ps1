@@ -106,6 +106,7 @@ Push-Location $exeDir
 try {
     $cscArgs = @(
         '/nologo', '/target:winexe', '/platform:anycpu', '/optimize+',
+        '/codepage:65001',
         '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll',
         '/main:KuzgunCrmSetup.Program',
         '/win32icon:kuzgun.ico',

@@ -1,4 +1,4 @@
-# Project: Kuzgun İletişim CRM (v2.3.0 Complete Overhaul, GUI Installer & Legacy Migration)
+# Project: Kuzgun İletişim CRM (v2.3.1 — PS 5.1 BOM/ASCII Fix, Local .json Backup Migration & GUI Installer)
 
 ## Architecture
 Kuzgun İletişim CRM consists of three tightly integrated components:
@@ -32,14 +32,18 @@ Every feature from the Survey phase and `ORIGINAL_REQUEST.md` is catalogued belo
 | F10 | Clean Application Close (`exitApplication`) Without Freezing or Zombie Listeners | Flush pending local/cloud state, detach `window` `focus`/`online` listeners, clear timers, rotate fun fact, attempt `window.close()` (works in `--app` mode) + notify optional local launcher shutdown endpoint, and transition cleanly to a reactive Vue closed state (`isClosed = true`) with "Yeniden Aç" button. | M2 | survey / request #1, #2 |
 | F11 | One-Click Native WinForms GUI Installer & Launcher (`KuzgunCRM_Kurulum.exe`) | Upgrade `exe/Program.cs` from console-only wrapper to a full `.NET Framework 4.0` WinForms GUI Wizard (hiding console in GUI mode, supporting CLI flags `-Test`, `-Hazirlik`, `-Bilgi`, `-Manuel`, `-Sessiz`, `-Baslat`), live progress bar, step indicators, async process execution, `taskkill /F /T` tree cleanup on close, and `--Baslat` (`--app`) launcher mode. | M3 | survey / request #1, #3, #5 |
 | F12 | Legacy Version (`127.0.0.1` / v1.x / v2.0) Detection, Data Migration & Shortcut Replacement (`Kurulum.ps1`) | Detect active `127.0.0.1` servers, shortcuts, and legacy folders (`C:\ozi`, `%LOCALAPPDATA%`, `%APPDATA%`, Desktop/`Masaüstü`, Chrome/Edge LevelDB), extract and normalize legacy data into `migrated_devices.json` and `EMBED_DEVICES` in both `Kuzgun_CRM.html` and `Kuzgun_Iletisim_CRM.html`, isolate `clasp` into `araclar/` with `.claspignore`, kill legacy processes/autostarts, and create Desktop shortcuts (`Masaüstü`/`Desktop`/`Public Desktop`) that launch the new version cleanly. | M3 | survey / request #1, #3, #5 |
+| F13 | PowerShell 5.1 UTF-8 BOM & Pure-ASCII Compatibility (`Kurulum.ps1`, `exe/Program.cs`) | Eliminate all non-ASCII bytes in `Kurulum.ps1` (replace `₺` with `\u20BA`/`[char]0x20BA`, Turkish diacritics via `[char]0x...` or normalization) AND save `Kurulum.ps1` with UTF-8 BOM (`EF BB BF`); enforce UTF-8 BOM injection in `exe/Program.cs` `ExtractPayloadFiles`; reorder `MasaustuKlasorleri` before first call and harden embedded Python SQLite query on line 542. | M5 | follow-up 2026-11-16 |
+| F14 | Extended Local `.json` Backup Discovery, `-ExeDir` Propagation & Multi-Envelope Migration | Pass launching exe directory (`-ExeDir`) from `exe/Program.cs` to `Kurulum.ps1`; expand `EskiDosyalariTara` to scan `Downloads`/`İndirilenler`, `Documents`/`Belgeler` (incl. OneDrive), localized `Masaüstü`/Public Desktop, and `$ExeDir`; unpack all JSON envelopes (`[...]`, `.devices`, `.data`, `.records`, `.items`, `.backup.devices`, single device object) in `Kurulum.ps1`, `Kuzgun_Iletisim_CRM.html`, and `Code.gs`; assign deterministic fallback IDs if missing. | M5 | follow-up 2026-11-16 |
+| F15 | v2.3.1 Production Build, Verification Tests & GitHub Release | Bump version to `v2.3.1` across all components and `README.md`, add PS5.1/BOM/migration tests and run full `tests/*.js` suite, rebuild `KuzgunCRM_Kurulum.exe` with Roslyn, commit, tag `v2.3.1`, push to `origin` (`v22` if needed), and publish GitHub Release with `KuzgunCRM_Kurulum.exe` asset. | M5 | follow-up 2026-11-16 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Backend & Cloud RPC Overhaul (`Code.gs`, `appsscript.json`) | Features F1, F2, F3, F4 (`Code.gs`, `appsscript.json`) | none | PLANNED |
-| M2 | CRM SPA Overhaul: Setup Wizard, Backup/Restore, Legacy Migration, Dates, Fun Facts & Clean Exit (`Kuzgun_Iletisim_CRM.html`) | Features F5, F6, F7, F8, F9, F10 (`Kuzgun_Iletisim_CRM.html`) | M1 contract | PLANNED |
-| M3 | One-Click WinForms GUI Installer, Legacy `127.0.0.1` Migrator & Exe Build (`exe/Program.cs`, `Kurulum.ps1`, `exe/Uret-Exe.ps1`, `KuzgunCRM_Kurulum.exe`, `README.md`) | Features F11, F12 (`exe/Program.cs`, `Kurulum.ps1`, `exe/Uret-Exe.ps1`, `KuzgunCRM_Kurulum.exe`, `README.md`) | M1, M2 | PLANNED |
-| M4 | Final Milestone: 100% E2E Test Suite Pass (Tiers 1–4) & Tier 5 Adversarial Coverage Hardening + Git Sync | Pass all E2E tests (Tiers 1–4), run Tier 5 white-box adversarial hardening, verify git status & remotes (`origin` and `v22`). | M1, M2, M3, E2E Track | PLANNED |
+| M1 | Backend & Cloud RPC Overhaul (`Code.gs`, `appsscript.json`) | Features F1, F2, F3, F4 (`Code.gs`, `appsscript.json`) | none | DONE |
+| M2 | CRM SPA Overhaul: Setup Wizard, Backup/Restore, Legacy Migration, Dates, Fun Facts & Clean Exit (`Kuzgun_Iletisim_CRM.html`) | Features F5, F6, F7, F8, F9, F10 (`Kuzgun_Iletisim_CRM.html`) | M1 contract | DONE |
+| M3 | One-Click WinForms GUI Installer, Legacy `127.0.0.1` Migrator & Exe Build (`exe/Program.cs`, `Kurulum.ps1`, `exe/Uret-Exe.ps1`, `KuzgunCRM_Kurulum.exe`, `README.md`) | Features F11, F12 (`exe/Program.cs`, `Kurulum.ps1`, `exe/Uret-Exe.ps1`, `KuzgunCRM_Kurulum.exe`, `README.md`) | M1, M2 | DONE |
+| M4 | Final Milestone: 100% E2E Test Suite Pass (Tiers 1–4) & Tier 5 Adversarial Coverage Hardening + Git Sync | Pass all E2E tests (Tiers 1–4), run Tier 5 white-box adversarial hardening, verify git status & remotes (`origin` and `v22`). | M1, M2, M3, E2E Track | DONE |
+| M5 | v2.3.1 Hotfix: PS 5.1 BOM/ASCII Compatibility, Local `.json` Backup Migration, Exe Rebuild & GitHub Release | Features F13, F14, F15 (`Kurulum.ps1`, `exe/Program.cs`, `exe/Uret-Exe.ps1`, `Kuzgun_Iletisim_CRM.html`, `Code.gs`, `README.md`, `tests/*`, `KuzgunCRM_Kurulum.exe`) | M1–M4 | IN_PROGRESS |
 
 ## Interface Contracts
 
@@ -47,7 +51,7 @@ Every feature from the Survey phase and `ORIGINAL_REQUEST.md` is catalogued belo
 - **`doPost(e)` RPC Contract**:
   - Request: HTTP POST with body `JSON.stringify({ fn: string, args: Array })`
   - Allowed `API_FUNCS_` in `Code.gs`:
-    - `crmStatus(pin)` -> `{ count, spreadsheet, spreadsheetId, url, dailyBackupActive, accountEmail, activeUserEmail, version: '2.3.0', updated }`
+    - `crmStatus(pin)` -> `{ count, spreadsheet, spreadsheetId, url, dailyBackupActive, accountEmail, activeUserEmail, version: '2.3.1', updated }`
     - `syncGoogleAccount(pin)` -> alias to `crmStatus(pin)`
     - `listDevices(pin)` -> `Array<Device>`
     - `upsertDevice(pin, device)` -> `{ status: 'ok' | 'conflict', device }`
