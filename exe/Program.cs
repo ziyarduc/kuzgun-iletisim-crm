@@ -18,11 +18,11 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("Kuzgun Iletisim CRM")]
-[assembly: AssemblyDescription("Standalone Masaustu Uygulamasi ve Kurulum Sihirbazi - Kuzgun Iletisim CRM v2.3.2")]
+[assembly: AssemblyDescription("Standalone Masaustu Uygulamasi ve Kurulum Sihirbazi - Kuzgun Iletisim CRM v2.4.0")]
 [assembly: AssemblyProduct("Kuzgun Iletisim CRM")]
 [assembly: AssemblyCompany("Kuzgun Iletisim")]
-[assembly: AssemblyVersion("2.3.2.0")]
-[assembly: AssemblyFileVersion("2.3.2.0")]
+[assembly: AssemblyVersion("2.4.0.0")]
+[assembly: AssemblyFileVersion("2.4.0.0")]
 [assembly: NeutralResourcesLanguage("tr-TR")]
 
 namespace KuzgunCrmSetup
@@ -1035,7 +1035,7 @@ namespace KuzgunCrmSetup
             res["activeUserEmail"] = acc;
             res["isStandalone"] = true;
             res["hasGoogleCloud"] = hasGoogleCloud;
-            res["version"] = "2.3.2";
+            res["version"] = "2.4.0";
             res["updated"] = maxUpdated;
             return res;
         }
@@ -1118,6 +1118,13 @@ namespace KuzgunCrmSetup
             }
             catch
             {
+                try
+                {
+                    string bak = dbFile + ".bak";
+                    if (File.Exists(bak))
+                        return ParseDevicesFromJson(File.ReadAllText(bak, Encoding.UTF8));
+                }
+                catch {}
                 return new List<Dictionary<string, object>>();
             }
         }
@@ -1126,7 +1133,22 @@ namespace KuzgunCrmSetup
         {
             JavaScriptSerializer ser = CreateSerializer();
             string json = ser.Serialize(devices);
-            File.WriteAllText(GetDbFilePath(), json, new UTF8Encoding(false));
+            string dbFile = GetDbFilePath();
+            string tmp = dbFile + ".tmp";
+            File.WriteAllText(tmp, json, new UTF8Encoding(false));
+            if (File.Exists(dbFile))
+            {
+                try { File.Replace(tmp, dbFile, dbFile + ".bak"); }
+                catch
+                {
+                    File.Copy(tmp, dbFile, true);
+                    try { File.Delete(tmp); } catch {}
+                }
+            }
+            else
+            {
+                File.Move(tmp, dbFile);
+            }
         }
 
         private static List<Dictionary<string, object>> CreateDemoDevices()
@@ -1339,7 +1361,7 @@ namespace KuzgunCrmSetup
 
             Dictionary<string, object> envelope = new Dictionary<string, object>();
             envelope["app"] = "kuzgun-crm";
-            envelope["version"] = "2.3.2";
+            envelope["version"] = "2.4.0";
             envelope["exported_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             envelope["count"] = devices.Count;
             envelope["devices"] = devices;
@@ -1815,7 +1837,7 @@ namespace KuzgunCrmSetup
                 {
                     det.HasCloudConfig = true;
                     string json = File.ReadAllText(cfgFile);
-                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.3.2";
+                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.4.0";
                     det.CloudUrl = SimpleJsonExtract(json, "url");
                 }
 
@@ -1870,7 +1892,7 @@ namespace KuzgunCrmSetup
                 det.TitleColor = Color.FromArgb(14, 116, 144);
                 det.SummaryDetail = string.Format(
                     "Sistemde aktif Kuzgun CRM ({0}) bulundu. Tek tikla guncelleme yapildiginda masaustu uygulamaniz yenilenecek ve tum musteri verileriniz aynen korunacaktir.",
-                    det.CloudVersion ?? "v2.3.2");
+                    det.CloudVersion ?? "v2.4.0");
             }
             else if (det.HasLegacyOzi || det.HasLegacyAppData || det.HasDesktopShortcuts)
             {
@@ -1978,7 +2000,7 @@ namespace KuzgunCrmSetup
             _lblSubtitle.AutoSize = true;
 
             _lblVersion = new Label();
-            _lblVersion.Text = "v2.3.2";
+            _lblVersion.Text = "v2.4.0";
             _lblVersion.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
             _lblVersion.ForeColor = Color.FromArgb(252, 211, 77);
             _lblVersion.Location = new Point(585, 25);
@@ -2126,7 +2148,7 @@ namespace KuzgunCrmSetup
                 _btnStart.Text = "Tek Tıkla Kur";
             }
 
-            AppendLog("Kuzgun CRM v2.3.2 Kurulum ve Yonetim Sihirbazi hazir.");
+            AppendLog("Kuzgun CRM v2.4.0 Kurulum ve Yonetim Sihirbazi hazir.");
             AppendLog("Durum: " + det.SummaryTitle);
         }
 

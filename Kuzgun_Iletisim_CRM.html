@@ -37,6 +37,12 @@
                     <a href="#" @click.prevent="currentTab = 'sales'; sidebarOpen = false" :class="{'bg-gray-800 text-blue-400': currentTab === 'sales'}" class="flex items-center p-3 rounded hover:bg-gray-800 transition">
                         <i class="fa-solid fa-store w-6 text-center mr-2"></i> Alım & Satım
                     </a>
+                    <a href="#" @click.prevent="currentTab = 'customers'; sidebarOpen = false" :class="{'bg-gray-800 text-blue-400': currentTab === 'customers'}" class="flex items-center p-3 rounded hover:bg-gray-800 transition">
+                        <i class="fa-solid fa-address-book w-6 text-center mr-2"></i> Müşteriler
+                    </a>
+                    <a href="#" @click.prevent="openGlobalSearch(); sidebarOpen = false" class="flex items-center p-3 rounded hover:bg-gray-800 transition text-gray-300">
+                        <i class="fa-solid fa-magnifying-glass w-6 text-center mr-2"></i> Genel Arama <span class="ml-auto text-[10px] bg-gray-700 px-1.5 py-0.5 rounded">Ctrl+K</span>
+                    </a>
                     <a href="#" @click.prevent="currentTab = 'backups'; sidebarOpen = false; if (isCloud && authed) fetchDriveBackups()" :class="{'bg-gray-800 text-blue-400': currentTab === 'backups'}" class="flex items-center p-3 rounded hover:bg-gray-800 transition">
                         <i class="fa-solid fa-cloud-arrow-up w-6 text-center mr-2"></i> Yedekleme Merkezi
                     </a>
@@ -81,7 +87,7 @@
                         <div class="mb-1 text-yellow-400"><i class="fa-solid fa-hard-drive mr-1"></i> Yerel mod (bu cihaz)</div>
                         <a href="#" @click.prevent="openSetup" class="block mb-1 text-blue-300 underline hover:text-blue-200">Buluta bağlan</a>
                     </template>
-                    <div>Kuzgun İletişim Yönetim Sistemi<br>v2.3.2</div>
+                    <div>Kuzgun İletişim Yönetim Sistemi<br>v2.4.0</div>
                 </div>
             </aside>
 
@@ -195,7 +201,7 @@
                                             <span v-else class="text-green-600 font-medium"><i class="fa-solid fa-store mr-1"></i> Alım/Satım</span>
                                         </td>
                                         <td class="p-4 font-medium">{{ device.brand }} {{ device.model }}</td>
-                                        <td class="p-4 text-gray-600">{{ device.customer_name || 'Mağaza Stoğu' }}</td>
+                                        <td class="p-4 text-gray-600"><a v-if="device.customer_name || device.customer_phone" href="#" @click.prevent="openCustomer(device)" class="text-blue-600 hover:underline">{{ device.customer_name || device.customer_phone }}</a><span v-else>Mağaza Stoğu</span></td>
                                         <td class="p-4"><span class="px-3 py-1 text-xs rounded-full font-medium" :class="statusClass(device.status)">{{ statusText(device.status) }}</span></td>
                                         <td class="p-4 text-sm text-gray-500">{{ formatDate(device.created_at) }}</td>
                                     </tr>
@@ -252,7 +258,7 @@
                                     <tr v-for="device in filteredRepairs" :key="device.id" class="border-b last:border-b-0 hover:bg-gray-50 transition">
                                         <td class="p-4 text-sm text-gray-600">{{ formatDate(device.created_at) }}</td>
                                         <td class="p-4">
-                                            <div class="font-medium text-gray-800">{{ device.customer_name }}</div>
+                                            <a href="#" @click.prevent="openCustomer(device)" class="font-medium text-blue-700 hover:underline" v-html="hl(device.customer_name || '-', searchQuery)"></a>
                                             <div class="text-xs text-gray-500">{{ device.customer_phone }}</div>
                                         </td>
                                         <td class="p-4 font-medium">{{ device.brand }} {{ device.model }}</td>
@@ -339,6 +345,43 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    <!-- Customers Tab -->
+                    <div v-if="currentTab === 'customers'" class="space-y-4" data-testid="customers-tab">
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+                            <div class="relative flex-1 max-w-xl">
+                                <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400 text-sm"></i>
+                                <input type="text" v-model="customerSearch" placeholder="Müşteri ara (ad, telefon, IMEI, cihaz)..." class="pl-10 pr-8 p-2 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                                <button v-if="customerSearch" @click="customerSearch = ''" class="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 text-sm">&times;</button>
+                            </div>
+                            <select v-model="customerSort" class="p-2 border border-gray-300 rounded-lg text-sm">
+                                <option value="last">Son işleme göre</option>
+                                <option value="total">Toplam tutara göre</option>
+                                <option value="name">Ada göre (A-Z)</option>
+                            </select>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-gray-50 border-b text-sm text-gray-500">
+                                    <tr><th class="p-4">Müşteri</th><th class="p-4">Telefon</th><th class="p-4">Kayıt</th><th class="p-4">Toplam</th><th class="p-4">Son İşlem</th><th class="p-4"></th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="c in customerPage" :key="c.key" class="border-b last:border-b-0 hover:bg-gray-50">
+                                        <td class="p-4 font-medium text-gray-800">{{ c.name || '(isimsiz)' }} <span v-if="c.active" class="ml-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{{ c.active }} aktif</span></td>
+                                        <td class="p-4 text-sm text-gray-600">{{ c.phone || '-' }}</td>
+                                        <td class="p-4 text-sm text-gray-600">{{ c.devices.length }}</td>
+                                        <td class="p-4 text-sm font-semibold">{{ c.total }} ₺</td>
+                                        <td class="p-4 text-sm text-gray-500">{{ formatDate(c.last) }}</td>
+                                        <td class="p-4 text-right"><button @click="openCustomerByKey(c.key)" class="text-sm bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-lg hover:bg-blue-100">Geçmiş</button></td>
+                                    </tr>
+                                    <tr v-if="!customerPage.length"><td colspan="6" class="p-8 text-center text-gray-400">Müşteri bulunamadı.</td></tr>
+                                </tbody>
+                            </table>
+                            <div v-if="customerList.length > customerLimit" class="p-3 text-center border-t">
+                                <button @click="customerLimit += 50" class="text-sm text-blue-600 hover:underline">Daha fazla göster ({{ customerList.length - customerLimit }} müşteri daha)</button>
+                            </div>
                         </div>
                     </div>
 
@@ -507,6 +550,73 @@
             </main>
         </div>
 
+        <datalist id="kuzgun-customers"><option v-for="c in customerList.slice(0, 200)" :key="'n' + c.key" :value="c.name"></option></datalist>
+        <datalist id="kuzgun-phones"><option v-for="c in customerList.slice(0, 200)" :key="'p' + c.key" :value="c.phone"></option></datalist>
+
+        <!-- Customer Card -->
+        <div v-if="selectedCustomer" class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center p-4 z-50" @click.self="customerKey = null" data-testid="customer-card">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div class="p-5 border-b flex items-start justify-between gap-3">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800">{{ selectedCustomer.name || '(isimsiz müşteri)' }}</h3>
+                        <div class="text-sm text-gray-500">{{ selectedCustomer.phone || 'Telefon yok' }}</div>
+                    </div>
+                    <button @click="customerKey = null" class="text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+                </div>
+                <div class="p-5 grid grid-cols-3 gap-3 text-center">
+                    <div class="bg-blue-50 rounded-xl p-3"><div class="text-xs text-gray-500">Tamir</div><div class="text-xl font-bold text-blue-700">{{ selectedCustomer.repairs }}</div></div>
+                    <div class="bg-green-50 rounded-xl p-3"><div class="text-xs text-gray-500">Alım/Satım</div><div class="text-xl font-bold text-green-700">{{ selectedCustomer.sales }}</div></div>
+                    <div class="bg-yellow-50 rounded-xl p-3"><div class="text-xs text-gray-500">Toplam</div><div class="text-xl font-bold text-yellow-700">{{ selectedCustomer.total }} ₺</div></div>
+                </div>
+                <div class="px-5 pb-3 flex flex-wrap gap-2">
+                    <a v-if="waLink(selectedCustomer.phone)" :href="waLink(selectedCustomer.phone)" target="_blank" rel="noopener" class="text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"><i class="fa-brands fa-whatsapp"></i> WhatsApp</a>
+                    <button @click="newForCustomer('REPAIR')" class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700">+ Yeni Tamir</button>
+                    <button @click="newForCustomer('SALE')" class="text-sm bg-gray-700 text-white px-3 py-1.5 rounded-lg hover:bg-gray-800">+ Yeni Alım/Satım</button>
+                </div>
+                <div class="px-5 pb-5">
+                    <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Geçmiş</h4>
+                    <ul class="border rounded-xl divide-y">
+                        <li v-for="d in selectedCustomer.devices" :key="d.id" class="p-3 flex items-center justify-between gap-3 text-sm">
+                            <div>
+                                <div class="font-medium text-gray-800">{{ d.type === 'REPAIR' ? 'Tamir' : 'Alım/Satım' }} · {{ d.brand }} {{ d.model }}</div>
+                                <div class="text-xs text-gray-500">{{ formatDate(d.created_at) }} · {{ d.operations_performed || d.notes || '-' }}</div>
+                            </div>
+                            <div class="text-right whitespace-nowrap">
+                                <span class="px-2 py-0.5 text-xs rounded-full" :class="statusClass(d.status)">{{ statusText(d.status) }}</span>
+                                <div class="text-xs font-semibold mt-1">{{ d.price ? d.price + ' ₺' : '-' }}</div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Search -->
+        <div v-if="globalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-start justify-center p-4 pt-20 z-50" @click.self="globalOpen = false" data-testid="global-search">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+                <input ref="globalInput" type="text" v-model="globalQuery" @keydown.esc="globalOpen = false" placeholder="Müşteri, telefon, IMEI, model, not ara..." class="w-full p-4 text-lg border-b outline-none">
+                <div class="max-h-[60vh] overflow-y-auto">
+                    <div v-if="!globalQuery.trim()" class="p-6 text-center text-gray-400 text-sm">Aramak için yazmaya başlayın. (Esc: kapat)</div>
+                    <template v-else>
+                        <div v-if="globalResults.customers.length" class="p-2">
+                            <div class="px-2 py-1 text-xs font-bold text-gray-500 uppercase">Müşteriler</div>
+                            <a v-for="c in globalResults.customers" :key="c.key" href="#" @click.prevent="globalOpen = false; openCustomerByKey(c.key)" class="block px-3 py-2 rounded-lg hover:bg-blue-50">
+                                <span class="font-medium" v-html="hl(c.name || '(isimsiz)', globalQuery)"></span> <span class="text-xs text-gray-500">{{ c.phone }} · {{ c.devices.length }} kayıt</span>
+                            </a>
+                        </div>
+                        <div v-if="globalResults.devices.length" class="p-2 border-t">
+                            <div class="px-2 py-1 text-xs font-bold text-gray-500 uppercase">Cihazlar</div>
+                            <a v-for="d in globalResults.devices" :key="d.id" href="#" @click.prevent="globalOpen = false; openCustomer(d)" class="block px-3 py-2 rounded-lg hover:bg-blue-50">
+                                <span class="font-medium" v-html="hl(d.brand + ' ' + d.model, globalQuery)"></span>
+                                <span class="text-xs text-gray-500"> · {{ d.type === 'REPAIR' ? 'Tamir' : 'Alım/Satım' }} · {{ d.customer_name || 'Mağaza' }} · {{ d.imei }}</span>
+                            </a>
+                        </div>
+                        <div v-if="!globalResults.customers.length && !globalResults.devices.length" class="p-6 text-center text-gray-400 text-sm">Sonuç bulunamadı.</div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal overlay -->
         <div v-if="isModalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <!-- Modal Content -->
@@ -561,11 +671,11 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Müşteri Adı Soyadı</label>
-                                    <input type="text" v-model="form.customer_name" placeholder="Örn: Ahmet Yılmaz" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                                    <input type="text" list="kuzgun-customers" @change="autofillCustomer" v-model="form.customer_name" placeholder="Örn: Ahmet Yılmaz" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Telefon Numarası</label>
-                                    <input type="text" v-model="form.customer_phone" placeholder="Örn: 0555 555 5555" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                                    <input type="text" list="kuzgun-phones" @change="autofillCustomer" v-model="form.customer_phone" placeholder="Örn: 0555 555 5555" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
                                 </div>
                             </div>
                         </div>
@@ -988,6 +1098,12 @@
                     currentTab: 'dashboard',
                     devices: [],
                     searchQuery: '',
+                    customerSearch: '',
+                    customerSort: 'last',
+                    customerLimit: 50,
+                    customerKey: null,
+                    globalOpen: false,
+                    globalQuery: '',
                     dateFilterStart: '',
                     dateFilterEnd: '',
                     dateFilterQuick: 'ALL',
@@ -1046,6 +1162,7 @@
                         'dashboard': 'Gösterge Paneli',
                         'repairs': 'Tamir Takip',
                         'sales': 'Alım & Satım',
+                        'customers': 'Müşteriler',
                         'backups': 'Yedekleme & Bulut Merkezi'
                     }[this.currentTab]
                 },
@@ -1082,34 +1199,61 @@
                 recentDevices() {
                     return [...this.devices].sort((a,b) => b.created_at - a.created_at).slice(0, 5);
                 },
+                indexed() {
+                    return this.devices.map(d => ({ d, idx: this.deviceIndex(d) }));
+                },
                 filteredRepairs() {
-                    const q = this.trLower(this.searchQuery);
-                    return this.repairs.filter(d => {
-                        if (!this.matchesDate(d)) return false;
-                        if (!q) return true;
-                        return (
-                            this.trLower(d.brand).includes(q) || 
-                            this.trLower(d.model).includes(q) ||
-                            this.trLower(d.imei).includes(q) ||
-                            this.trLower(d.customer_name).includes(q) ||
-                            this.trLower(d.customer_phone).includes(q) ||
-                            this.trLower(d.serial_number).includes(q)
-                        );
-                    });
+                    const toks = this.tokens(this.searchQuery);
+                    return this.indexed.filter(x => x.d.type === 'REPAIR' && this.matchesDate(x.d) && this.matchTokens(x.idx, toks))
+                        .map(x => x.d).sort((p, q) => q.created_at - p.created_at);
                 },
                 filteredSales() {
-                    const q = this.trLower(this.searchQuery);
-                    return this.sales.filter(d => {
-                        if (!this.matchesDate(d)) return false;
-                        if (!q) return true;
-                        return (
-                            this.trLower(d.brand).includes(q) || 
-                            this.trLower(d.model).includes(q) ||
-                            this.trLower(d.imei).includes(q) ||
-                            this.trLower(d.serial_number).includes(q) ||
-                            this.trLower(d.notes).includes(q)
-                        );
+                    const toks = this.tokens(this.searchQuery);
+                    return this.indexed.filter(x => x.d.type === 'SALE' && this.matchesDate(x.d) && this.matchTokens(x.idx, toks))
+                        .map(x => x.d).sort((p, q) => q.created_at - p.created_at);
+                },
+                customerMap() {
+                    const map = new Map();
+                    this.devices.forEach(d => {
+                        const key = this.custKey(d);
+                        if (!key) return;
+                        let c = map.get(key);
+                        if (!c) { c = { key, name: '', phone: '', devices: [], total: 0, repairs: 0, sales: 0, active: 0, last: 0 }; map.set(key, c); }
+                        c.devices.push(d);
+                        if (!c.name && d.customer_name) c.name = d.customer_name;
+                        if (!c.phone && d.customer_phone) c.phone = d.customer_phone;
+                        c.total += Number(d.price) || 0;
+                        if (d.type === 'REPAIR') c.repairs++; else c.sales++;
+                        if (d.type === 'REPAIR' && ['PENDING', 'IN_PROGRESS'].includes(d.status)) c.active++;
+                        const t = d.created_at || 0;
+                        if (t > c.last) c.last = t;
                     });
+                    map.forEach(c => c.devices.sort((p, q) => (q.created_at || 0) - (p.created_at || 0)));
+                    return map;
+                },
+                customerList() {
+                    const list = Array.from(this.customerMap.values());
+                    const m = this.customerSort;
+                    list.sort((p, q) => m === 'total' ? q.total - p.total : m === 'name' ? (p.name || '').localeCompare(q.name || '', 'tr') : q.last - p.last);
+                    return list;
+                },
+                customerFiltered() {
+                    const toks = this.tokens(this.customerSearch);
+                    if (!toks.length) return this.customerList;
+                    return this.customerList.filter(c => this.matchTokens(this.trFold(c.name + ' ' + c.phone + ' ' + this.digits(c.phone) + ' ' + c.devices.map(d => this.deviceIndex(d)).join(' ')), toks));
+                },
+                customerPage() {
+                    return this.customerFiltered.slice(0, this.customerLimit);
+                },
+                selectedCustomer() {
+                    return this.customerKey ? (this.customerMap.get(this.customerKey) || null) : null;
+                },
+                globalResults() {
+                    const toks = this.tokens(this.globalQuery);
+                    if (!toks.length) return { customers: [], devices: [] };
+                    const customers = this.customerList.filter(c => this.matchTokens(this.trFold(c.name + ' ' + c.phone + ' ' + this.digits(c.phone)), toks)).slice(0, 8);
+                    const devices = this.indexed.filter(x => this.matchTokens(x.idx, toks)).map(x => x.d).slice(0, 12);
+                    return { customers, devices };
                 },
                 activeRepairs() {
                     return this.repairs.filter(d => ['PENDING', 'IN_PROGRESS'].includes(d.status)).length;
@@ -1168,10 +1312,12 @@
                 }
                 window.addEventListener('focus', this.onWindowFocus);
                 window.addEventListener('online', this.onOnline);
+                window.addEventListener('keydown', this.onGlobalKey);
             },
             beforeUnmount() {
                 window.removeEventListener('focus', this.onWindowFocus);
                 window.removeEventListener('online', this.onOnline);
+                window.removeEventListener('keydown', this.onGlobalKey);
             },
             methods: {
                 nextFunFact() {
@@ -1183,6 +1329,112 @@
                         tries++;
                     } while (tries < 10 && FUN_FACTS.length > 1 && next && this.currentFact && next.text === this.currentFact.text);
                     this.currentFact = next || FUN_FACTS[0];
+                },
+                trFold(str) {
+                    if (!str) return '';
+                    return String(str).toLocaleLowerCase('tr-TR')
+                        .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c')
+                        .replace(/â/g, 'a').replace(/î/g, 'i').replace(/û/g, 'u').trim();
+                },
+                digits(str) {
+                    return str ? String(str).replace(/\D/g, '') : '';
+                },
+                normPhone(str) {
+                    const dg = this.digits(str);
+                    return dg.length >= 10 ? dg.slice(-10) : dg;
+                },
+                custKey(d) {
+                    const p = this.normPhone(d.customer_phone);
+                    if (p && p.length >= 7) return 'p:' + p;
+                    const n = this.trFold(d.customer_name).replace(/\s+/g, ' ');
+                    return n ? 'n:' + n : '';
+                },
+                deviceIndex(d) {
+                    return this.trFold([d.brand, d.model, d.imei, d.serial_number, d.customer_name, d.customer_phone,
+                        this.digits(d.customer_phone), d.notes, d.operations_performed, this.statusText(d.status)].join(' '));
+                },
+                tokens(q) {
+                    return this.trFold(q).split(/\s+/).filter(Boolean);
+                },
+                matchTokens(hay, toks) {
+                    for (let i = 0; i < toks.length; i++) if (hay.indexOf(toks[i]) < 0) return false;
+                    return true;
+                },
+                esc(str) {
+                    return String(str == null ? '' : str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+                },
+                hl(text, q) {
+                    const t = String(text == null ? '' : text);
+                    const toks = this.tokens(q);
+                    if (!toks.length) return this.esc(t);
+                    const folded = this.trFold(t);
+                    if (folded.length !== t.length) return this.esc(t);
+                    const mark = new Array(t.length).fill(false);
+                    toks.forEach(k => { let i = folded.indexOf(k); while (i >= 0) { for (let j = i; j < i + k.length; j++) mark[j] = true; i = folded.indexOf(k, i + k.length); } });
+                    let out = '', open = false;
+                    for (let i = 0; i < t.length; i++) {
+                        if (mark[i] && !open) { out += '<mark>'; open = true; }
+                        if (!mark[i] && open) { out += '</mark>'; open = false; }
+                        out += this.esc(t[i]);
+                    }
+                    return out + (open ? '</mark>' : '');
+                },
+                waLink(phone) {
+                    let dg = this.digits(phone);
+                    if (dg.length < 10) return '';
+                    if (dg.length === 10) dg = '90' + dg;
+                    else if (dg.startsWith('0')) dg = '90' + dg.slice(1);
+                    return 'https://wa.me/' + dg;
+                },
+                openCustomer(d) {
+                    const k = this.custKey(d);
+                    if (k) this.customerKey = k;
+                },
+                openCustomerByKey(k) {
+                    this.customerKey = k;
+                },
+                openGlobalSearch() {
+                    this.globalQuery = '';
+                    this.globalOpen = true;
+                    this.$nextTick(() => { const el = this.$refs.globalInput; if (el && el.focus) el.focus(); });
+                },
+                onGlobalKey(e) {
+                    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+                        e.preventDefault();
+                        this.openGlobalSearch();
+                    } else if (e.key === 'Escape') {
+                        if (this.globalOpen) this.globalOpen = false;
+                        else if (this.customerKey) this.customerKey = null;
+                    }
+                },
+                newForCustomer(type) {
+                    const c = this.selectedCustomer;
+                    if (!c) return;
+                    this.customerKey = null;
+                    this.openModal(type);
+                    this.form.customer_name = c.name;
+                    this.form.customer_phone = c.phone;
+                },
+                autofillCustomer() {
+                    const f = this.form;
+                    if (this.editingDevice) return;
+                    const k = this.custKey(f);
+                    const c = k && this.customerMap.get(k);
+                    if (c) {
+                        if (!f.customer_name) f.customer_name = c.name;
+                        if (!f.customer_phone) f.customer_phone = c.phone;
+                        return;
+                    }
+                    const nm = this.trFold(f.customer_name);
+                    if (nm && !f.customer_phone) {
+                        const hit = this.customerList.find(x => this.trFold(x.name) === nm);
+                        if (hit) f.customer_phone = hit.phone;
+                    }
+                    const ph = this.normPhone(f.customer_phone);
+                    if (ph && !f.customer_name) {
+                        const hit = this.customerList.find(x => this.normPhone(x.phone) === ph);
+                        if (hit) f.customer_name = hit.name;
+                    }
                 },
                 trLower(str) {
                     return str ? String(str).toLocaleLowerCase('tr-TR').trim() : '';
