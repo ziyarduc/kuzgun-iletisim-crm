@@ -40,7 +40,7 @@ ok(urls.length >= 3 && urls.every(u => fs.existsSync(R + 'assets/webfonts/' + u)
 
 // 4) Kullanılan tüm Tailwind sınıfları derlenmiş CSS içinde (örnek kritik sınıflar)
 const tw = fs.readFileSync(R + 'assets/tailwind.css', 'utf8');
-['.bg-gray-900', '.rounded-xl', '.md\\:static', '.backdrop-blur-sm', '.max-w-2xl', '.divide-y', '.bg-opacity-60', '.animate-pulse', '.hover\\:bg-gray-50:hover']
+['.bg-gray-900', '.rounded-xl', '.lg\\:static', '.min-\\[420px\\]\\:grid-cols-3', '.backdrop-blur-sm', '.max-w-2xl', '.divide-y', '.bg-opacity-60', '.animate-pulse', '.hover\\:bg-gray-50:hover']
   .forEach(c => ok(tw.includes(c), 'Tailwind sınıfı derlenmiş: ' + c));
 
 // 5) Vue prod yapısı

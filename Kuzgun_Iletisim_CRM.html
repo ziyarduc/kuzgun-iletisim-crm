@@ -24,6 +24,12 @@
     })();
     </script>
     <style>
+        /* Ekran / pencere boyutuna uyum: dvh destekleyen motorlarda gerçek görünür yükseklik */
+        .app-h { height: 100vh; height: 100dvh; }
+        .modal-box { max-height: calc(100vh - 1rem); max-height: calc(100dvh - 1rem); }
+        .search-results { max-height: calc(100vh - 9rem); max-height: calc(100dvh - 9rem); }
+        @media (min-width: 640px) { .modal-box { max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); } }
+        @media (max-height: 560px) { .fun-fact-widget { display: none; } }
         /* Custom scrollbar */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
@@ -35,10 +41,10 @@
 <body class="bg-gray-100 text-gray-800 font-sans">
     <div id="app" v-cloak>
         <!-- Sidebar and Main Content Wrapper -->
-        <div class="flex h-screen overflow-hidden">
-            <div v-if="sidebarOpen" class="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden" @click="sidebarOpen = false"></div>
+        <div class="flex app-h overflow-hidden">
+            <div v-if="sidebarOpen" class="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden" @click="sidebarOpen = false"></div>
             <!-- Sidebar -->
-            <aside class="w-64 bg-gray-900 text-white flex flex-col fixed md:static inset-y-0 left-0 z-40 transform transition-transform duration-200 flex-shrink-0" :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
+            <aside class="w-60 xl:w-64 bg-gray-900 text-white flex flex-col fixed lg:static inset-y-0 left-0 z-40 transform transition-transform duration-200 flex-shrink-0 overflow-y-auto" :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
                 <div class="p-5 flex items-center space-x-3 border-b border-gray-800">
                     <i class="fa-solid fa-mobile-screen-button text-3xl text-blue-500"></i>
                     <h1 class="text-xl font-bold tracking-wide">Kuzgun İletişim</h1>
@@ -65,7 +71,7 @@
                 </nav>
 
                 <!-- Minecraft Style Fun Fact Widget in Sidebar -->
-                <div class="px-3 py-2.5 mx-3 mb-2 rounded-xl bg-gray-800/80 border border-gray-700/60 text-xs shadow-inner relative group select-none transition hover:border-yellow-500/50">
+                <div class="fun-fact-widget px-3 py-2.5 mx-3 mb-2 rounded-xl bg-gray-800/80 border border-gray-700/60 text-xs shadow-inner relative group select-none transition hover:border-yellow-500/50">
                     <div class="flex items-center justify-between mb-1.5">
                         <span class="flex items-center gap-1.5 font-bold text-yellow-400 text-[11px] uppercase tracking-wider">
                             <span class="inline-block animate-pulse">✨</span> Biliyor muydunuz?
@@ -103,16 +109,16 @@
                         <div class="mb-1 text-yellow-400"><i class="fa-solid fa-hard-drive mr-1"></i> Yerel mod (bu cihaz)</div>
                         <a href="#" @click.prevent="openSetup" class="block mb-1 text-blue-300 underline hover:text-blue-200">Buluta bağlan</a>
                     </template>
-                    <div>Kuzgun İletişim Yönetim Sistemi<br>v2.4.1</div>
+                    <div>Kuzgun İletişim Yönetim Sistemi<br>v2.4.2</div>
                 </div>
             </aside>
 
             <!-- Main Content -->
             <main class="flex-1 flex flex-col overflow-hidden bg-gray-100">
                 <!-- Topbar -->
-                <header class="bg-white shadow-sm border-b p-4 flex justify-between items-center z-10 gap-3 flex-wrap">
+                <header class="bg-white shadow-sm border-b px-3 py-2.5 sm:p-4 flex justify-between items-center z-10 gap-2 sm:gap-3 flex-wrap">
                     <div class="flex items-center gap-3">
-                        <button @click="sidebarOpen = !sidebarOpen" class="md:hidden text-gray-600 hover:text-gray-900 text-xl" title="Menü"><i class="fa-solid fa-bars"></i></button>
+                        <button @click="sidebarOpen = !sidebarOpen" class="lg:hidden text-gray-600 hover:text-gray-900 text-xl" title="Menü"><i class="fa-solid fa-bars"></i></button>
                         <h2 class="text-xl sm:text-2xl font-semibold text-gray-800">{{ tabTitle }}</h2>
                     </div>
                     <div class="flex items-center gap-2 flex-wrap">
@@ -122,6 +128,17 @@
                         <span class="hidden sm:inline text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full border">
                             <i class="fa-regular fa-calendar mr-1"></i> {{ new Date().toLocaleDateString('tr-TR') }}
                         </span>
+                        <div class="relative">
+                            <button @click="scaleMenuOpen = !scaleMenuOpen" title="Arayüz boyutu (yazı ve alan büyüklüğü)" data-testid="scale-button" class="text-sm bg-gray-100 text-gray-700 border border-gray-200 px-3 py-1.5 rounded-full hover:bg-gray-200 transition">
+                                <i class="fa-solid fa-text-height"></i><span class="hidden sm:inline ml-1">{{ uiScaleLabel }}</span>
+                            </button>
+                            <div v-if="scaleMenuOpen" class="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-30 py-1 text-sm" data-testid="scale-menu">
+                                <div class="px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-400">Arayüz Boyutu</div>
+                                <button v-for="o in uiScaleOptions" :key="o.value" @click="setUiScale(o.value)" class="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center justify-between" :class="uiScale === o.value ? 'text-blue-700 font-semibold' : 'text-gray-700'">
+                                    <span>{{ o.label }}</span><i v-if="uiScale === o.value" class="fa-solid fa-check"></i>
+                                </button>
+                            </div>
+                        </div>
                         <button @click="currentTab = 'backups'; if (isCloud && authed) fetchDriveBackups()" title="Yedekleme ve Bulut Merkezi" class="text-sm bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-full hover:bg-blue-100 transition">
                             <i class="fa-solid fa-cloud-arrow-up mr-1"></i><span class="hidden sm:inline">Yedekleme</span>
                         </button>
@@ -135,7 +152,7 @@
                 </header>
 
                 <!-- Scrollable Content -->
-                <div class="flex-1 overflow-y-auto p-6">
+                <div class="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
                     <!-- Dashboard -->
                     <div v-if="currentTab === 'dashboard'">
                         <!-- Minecraft Style Splash Banner -->
@@ -158,7 +175,7 @@
                             </button>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
                             <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-blue-500 flex items-center justify-between">
                                 <div>
                                     <div class="text-gray-500 text-sm font-medium mb-1">Aktif Tamirler</div>
@@ -278,7 +295,7 @@
                                             <div class="text-xs text-gray-500">{{ device.customer_phone }}</div>
                                         </td>
                                         <td class="p-4 font-medium">{{ device.brand }} {{ device.model }}</td>
-                                        <td class="p-4 text-sm text-gray-500">{{ device.imei }}</td>
+                                        <td class="p-4 text-sm text-gray-500 break-all">{{ device.imei }}</td>
                                         <td class="p-4">
                                             <span class="px-3 py-1 text-xs rounded-full font-medium" :class="statusClass(device.status)">{{ statusText(device.status) }}</span>
                                         </td>
@@ -343,7 +360,7 @@
                                     <tr v-for="device in filteredSales" :key="device.id" class="border-b last:border-b-0 hover:bg-gray-50 transition">
                                         <td class="p-4 text-sm text-gray-600">{{ formatDate(device.created_at) }}</td>
                                         <td class="p-4 font-medium">{{ device.brand }} {{ device.model }}</td>
-                                        <td class="p-4 text-sm text-gray-500">{{ device.imei }}</td>
+                                        <td class="p-4 text-sm text-gray-500 break-all">{{ device.imei }}</td>
                                         <td class="p-4">
                                             <span class="px-3 py-1 text-xs rounded-full font-medium" :class="statusClass(device.status)">{{ statusText(device.status) }}</span>
                                         </td>
@@ -366,7 +383,7 @@
 
                     <!-- Customers Tab -->
                     <div v-if="currentTab === 'customers'" class="space-y-4" data-testid="customers-tab">
-                        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
                             <div class="relative flex-1 max-w-xl">
                                 <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400 text-sm"></i>
                                 <input type="text" v-model="customerSearch" placeholder="Müşteri ara (ad, telefon, IMEI, cihaz)..." class="pl-10 pr-8 p-2 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-blue-500 outline-none text-sm">
@@ -404,7 +421,7 @@
                     <!-- Backups Tab -->
                     <div v-if="currentTab === 'backups'" class="space-y-6">
                         <!-- Overview Status Cards -->
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                             <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
                                 <div class="text-gray-500 text-xs font-semibold uppercase mb-1">Mevcut Veritabanı</div>
                                 <div class="text-2xl font-bold text-gray-800">{{ devices.length }} Kayıt</div>
@@ -570,8 +587,8 @@
         <datalist id="kuzgun-phones"><option v-for="c in customerList.slice(0, 200)" :key="'p' + c.key" :value="c.phone"></option></datalist>
 
         <!-- Customer Card -->
-        <div v-if="selectedCustomer" class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center p-4 z-50" @click.self="customerKey = null" data-testid="customer-card">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div v-if="selectedCustomer" class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center p-2 sm:p-4 z-50" @click.self="customerKey = null" data-testid="customer-card">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl modal-box overflow-y-auto">
                 <div class="p-5 border-b flex items-start justify-between gap-3">
                     <div>
                         <h3 class="text-xl font-bold text-gray-800">{{ selectedCustomer.name || '(isimsiz müşteri)' }}</h3>
@@ -579,7 +596,7 @@
                     </div>
                     <button @click="customerKey = null" class="text-2xl text-gray-400 hover:text-gray-600">&times;</button>
                 </div>
-                <div class="p-5 grid grid-cols-3 gap-3 text-center">
+                <div class="p-4 sm:p-5 grid grid-cols-1 min-[420px]:grid-cols-3 gap-3 text-center">
                     <div class="bg-blue-50 rounded-xl p-3"><div class="text-xs text-gray-500">Tamir</div><div class="text-xl font-bold text-blue-700">{{ selectedCustomer.repairs }}</div></div>
                     <div class="bg-green-50 rounded-xl p-3"><div class="text-xs text-gray-500">Alım/Satım</div><div class="text-xl font-bold text-green-700">{{ selectedCustomer.sales }}</div></div>
                     <div class="bg-yellow-50 rounded-xl p-3"><div class="text-xs text-gray-500">Toplam</div><div class="text-xl font-bold text-yellow-700">{{ selectedCustomer.total }} ₺</div></div>
@@ -608,10 +625,10 @@
         </div>
 
         <!-- Global Search -->
-        <div v-if="globalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-start justify-center p-4 pt-20 z-50" @click.self="globalOpen = false" data-testid="global-search">
+        <div v-if="globalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-start justify-center p-2 sm:p-4 pt-10 sm:pt-20 z-50" @click.self="globalOpen = false" data-testid="global-search">
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
                 <input ref="globalInput" type="text" v-model="globalQuery" @keydown.esc="globalOpen = false" placeholder="Müşteri, telefon, IMEI, model, not ara..." class="w-full p-4 text-lg border-b outline-none">
-                <div class="max-h-[60vh] overflow-y-auto">
+                <div class="search-results overflow-y-auto">
                     <div v-if="!globalQuery.trim()" class="p-6 text-center text-gray-400 text-sm">Aramak için yazmaya başlayın. (Esc: kapat)</div>
                     <template v-else>
                         <div v-if="globalResults.customers.length" class="p-2">
@@ -634,9 +651,9 @@
         </div>
 
         <!-- Modal overlay -->
-        <div v-if="isModalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div v-if="isModalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50">
             <!-- Modal Content -->
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col modal-box transform transition-all">
                 <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                     <h3 class="text-xl font-bold text-gray-800">
                         <i :class="form.type === 'REPAIR' ? 'fa-wrench text-blue-500' : 'fa-store text-green-500'" class="fa-solid mr-2"></i>
@@ -647,7 +664,7 @@
                     </button>
                 </div>
                 
-                <div class="p-6 overflow-y-auto flex-1 custom-scrollbar">
+                <div class="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
                     <form id="deviceForm" @submit.prevent="saveDevice" class="space-y-5">
                         
                         <!-- Cihaz Bilgileri -->
@@ -661,7 +678,7 @@
                                 <input type="datetime-local" v-model="form.created_at_str" required class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-medium bg-white">
                                 <p class="text-[11px] text-gray-500 mt-1">Varsayılan olarak anlık tarih/saat seçilidir; dilerseniz geriye veya ileriye dönük değiştirebilirsiniz.</p>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Marka <span class="text-red-500">*</span></label>
                                     <input type="text" v-model="form.brand" required placeholder="Örn: Apple, Samsung" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
@@ -684,7 +701,7 @@
                         <!-- Müşteri Bilgileri (Sadece Tamir) -->
                         <div v-if="form.type === 'REPAIR'" class="bg-gray-50 p-4 rounded-lg border border-gray-100">
                             <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">Müşteri Bilgileri</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Müşteri Adı Soyadı</label>
                                     <input type="text" list="kuzgun-customers" @change="autofillCustomer" v-model="form.customer_name" placeholder="Örn: Ahmet Yılmaz" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
@@ -699,7 +716,7 @@
                         <!-- Durum & Finans -->
                         <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
                             <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">İşlem Detayları</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Cihaz Durumu</label>
                                     <select v-model="form.status" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-medium">
@@ -737,7 +754,7 @@
                     </form>
                 </div>
                 
-                <div class="px-6 py-4 border-t bg-white flex justify-end space-x-3">
+                <div class="px-4 sm:px-6 py-3 sm:py-4 border-t bg-white flex justify-end gap-3 flex-shrink-0">
                     <button type="button" @click="closeModal" class="px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition font-medium">İptal</button>
                     <button type="submit" form="deviceForm" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium shadow-sm flex items-center">
                         <i class="fa-solid fa-save mr-2"></i> Kaydet
@@ -748,7 +765,7 @@
 
         <!-- Restore Confirmation Modal -->
         <div v-if="restoreModalOpen" class="fixed inset-0 bg-gray-900 bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-[75]" @click.self="!restoring && (restoreModalOpen = false)">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[92vh] overflow-y-auto">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden modal-box overflow-y-auto">
                 <div class="p-5 border-b flex items-center justify-between" :class="restoreMode === 'replace' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'">
                     <h3 class="font-bold text-base flex items-center gap-2">
                         <i :class="restoreMode === 'replace' ? 'fa-solid fa-triangle-exclamation text-red-600' : 'fa-solid fa-code-merge text-blue-600'"></i>
@@ -808,7 +825,7 @@
 
         <!-- İlk Açılış / Bulut Bağlantı Sihirbazı -->
         <div v-if="showSetup" class="fixed inset-0 bg-gray-900 bg-opacity-95 backdrop-blur-sm flex items-center justify-center p-4 z-[70]">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden max-h-full overflow-y-auto">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden modal-box overflow-y-auto">
                 <div class="bg-gray-900 text-white p-5 text-center relative">
                     <button @click="skipSetup" class="absolute right-4 top-4 text-gray-400 hover:text-white text-xl leading-none" title="Kapat">&times;</button>
                     <div class="text-3xl mb-1">🦅</div>
@@ -877,7 +894,7 @@
 
         <!-- Ayarlar (cloud + authed) -->
         <div v-if="settingsOpen" class="fixed inset-0 bg-gray-900 bg-opacity-80 backdrop-blur-sm flex items-center justify-center p-4 z-[65]" @click.self="settingsOpen = false">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-full overflow-y-auto">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden modal-box overflow-y-auto">
                 <div class="bg-gray-900 text-white p-4 flex items-center justify-between sticky top-0">
                     <h3 class="font-semibold"><i class="fa-solid fa-gear mr-2"></i>Ayarlar</h3>
                     <button @click="settingsOpen = false" class="text-gray-400 hover:text-white text-xl leading-none" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
@@ -920,7 +937,7 @@
 
         <!-- Toast -->
         <transition enter-active-class="transition duration-200" enter-from-class="opacity-0 translate-y-4" leave-active-class="transition duration-300" leave-to-class="opacity-0 translate-y-4">
-            <div v-if="toast" class="fixed bottom-5 right-5 bg-gray-900 text-white text-sm px-4 py-3 rounded-lg shadow-xl z-[70] max-w-xs flex items-start gap-2">
+            <div v-if="toast" class="fixed top-3 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-3 rounded-lg shadow-xl z-[90] w-[calc(100vw-1.5rem)] max-w-sm flex items-start gap-2 pointer-events-none" data-testid="toast">
                 <i :class="toastIcon" class="mt-0.5"></i> {{ toast }}
             </div>
         </transition>
@@ -1127,6 +1144,16 @@
                     editingDevice: null,
                     form: this.getEmptyForm(),
                     sidebarOpen: false,
+                    scaleMenuOpen: false,
+                    uiScale: 'auto',
+                    viewportW: window.innerWidth,
+                    uiScaleOptions: [
+                        { value: 'auto', label: 'Otomatik (ekrana göre)' },
+                        { value: '0.85', label: 'Küçük' },
+                        { value: '1', label: 'Normal' },
+                        { value: '1.15', label: 'Büyük' },
+                        { value: '1.3', label: 'Çok büyük' }
+                    ],
                     isCloud: false,
                     authed: false,
                     showLogin: false,
@@ -1173,6 +1200,10 @@
                 }
             },
             computed: {
+                uiScaleLabel() {
+                    const o = this.uiScaleOptions.find(x => x.value === this.uiScale);
+                    return o ? (o.value === 'auto' ? 'Otomatik' : o.label) : 'Otomatik';
+                },
                 tabTitle() {
                     return {
                         'dashboard': 'Gösterge Paneli',
@@ -1313,6 +1344,9 @@
                 }
             },
             mounted() {
+                try { const sv = localStorage.getItem('kuzgun_ui_scale'); if (sv && this.uiScaleOptions.some(o => o.value === sv)) this.uiScale = sv; } catch (e) {}
+                this.applyUiScale();
+                window.addEventListener('resize', this.onResize);
                 this.nextFunFact();
                 this.loadSnapshots();
                 this.isCloud = Gas.available();
@@ -1331,6 +1365,7 @@
                 window.addEventListener('keydown', this.onGlobalKey);
             },
             beforeUnmount() {
+                window.removeEventListener('resize', this.onResize);
                 window.removeEventListener('focus', this.onWindowFocus);
                 window.removeEventListener('online', this.onOnline);
                 window.removeEventListener('keydown', this.onGlobalKey);
@@ -1345,6 +1380,34 @@
                         tries++;
                     } while (tries < 10 && FUN_FACTS.length > 1 && next && this.currentFact && next.text === this.currentFact.text);
                     this.currentFact = next || FUN_FACTS[0];
+                },
+                autoScaleFor(w, h) {
+                    // Küçük pencerede daha sıkı, çok büyük ekranda daha iri yazı. Yükseklik de hesaba katılır.
+                    let k = 1;
+                    if (w < 700) k = 0.88;
+                    else if (w < 1000) k = 0.92;
+                    else if (w < 1250) k = 0.96;
+                    else if (w >= 2200) k = 1.25;
+                    else if (w >= 1800) k = 1.12;
+                    if (h && h < 600) k = Math.min(k, 0.9);
+                    return k;
+                },
+                applyUiScale() {
+                    const el = document.documentElement;
+                    const k = this.uiScale === 'auto' ? this.autoScaleFor(window.innerWidth, window.innerHeight) : (parseFloat(this.uiScale) || 1);
+                    el.style.fontSize = (16 * k).toFixed(2) + 'px';
+                    this.viewportW = window.innerWidth;
+                },
+                setUiScale(v) {
+                    this.uiScale = v;
+                    this.scaleMenuOpen = false;
+                    try { localStorage.setItem('kuzgun_ui_scale', v); } catch (e) {}
+                    this.applyUiScale();
+                },
+                onResize() {
+                    if (this.uiScale === 'auto') this.applyUiScale();
+                    else this.viewportW = window.innerWidth;
+                    if (window.innerWidth >= 1024) this.sidebarOpen = false;
                 },
                 trFold(str) {
                     if (!str) return '';
@@ -1419,7 +1482,8 @@
                         e.preventDefault();
                         this.openGlobalSearch();
                     } else if (e.key === 'Escape') {
-                        if (this.globalOpen) this.globalOpen = false;
+                        if (this.scaleMenuOpen) this.scaleMenuOpen = false;
+                        else if (this.globalOpen) this.globalOpen = false;
                         else if (this.customerKey) this.customerKey = null;
                     }
                 },

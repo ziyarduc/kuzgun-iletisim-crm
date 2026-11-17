@@ -18,11 +18,11 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("Kuzgun Iletisim CRM")]
-[assembly: AssemblyDescription("Standalone Masaustu Uygulamasi ve Kurulum Sihirbazi - Kuzgun Iletisim CRM v2.4.1")]
+[assembly: AssemblyDescription("Standalone Masaustu Uygulamasi ve Kurulum Sihirbazi - Kuzgun Iletisim CRM v2.4.2")]
 [assembly: AssemblyProduct("Kuzgun Iletisim CRM")]
 [assembly: AssemblyCompany("Kuzgun Iletisim")]
-[assembly: AssemblyVersion("2.4.1.0")]
-[assembly: AssemblyFileVersion("2.4.1.0")]
+[assembly: AssemblyVersion("2.4.2.0")]
+[assembly: AssemblyFileVersion("2.4.2.0")]
 [assembly: NeutralResourcesLanguage("tr-TR")]
 
 namespace KuzgunCrmSetup
@@ -344,6 +344,33 @@ namespace KuzgunCrmSetup
             }
         }
 
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
+
+        private static string AppWindowSizeArgs()
+        {
+            try
+            {
+                try { SetProcessDPIAware(); } catch {}
+                Rectangle wa = Screen.PrimaryScreen.WorkingArea; // fiziksel piksel (DPI-aware)
+                double scale = 1.0;
+                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) { scale = g.DpiX / 96.0; }
+                if (scale < 1.0) scale = 1.0;
+                int waW = (int)(wa.Width / scale), waH = (int)(wa.Height / scale);   // Chromium DIP birimi
+                int w = Math.Min(1500, (int)(waW * 0.94));
+                int h = Math.Min(950, (int)(waH * 0.94));
+                w = Math.Max(w, Math.Min(640, waW));
+                h = Math.Max(h, Math.Min(480, waH));
+                int x = (int)(wa.Left / scale) + Math.Max(0, (waW - w) / 2);
+                int y = (int)(wa.Top / scale) + Math.Max(0, (waH - h) / 2);
+                return " --window-size=" + w + "," + h + " --window-position=" + x + "," + y;
+            }
+            catch
+            {
+                return " --window-size=1100,700";
+            }
+        }
+
         private static void OpenStandaloneAppWindow(string appUrl)
         {
             string browserExe = FindChromiumBrowserExe();
@@ -354,7 +381,7 @@ namespace KuzgunCrmSetup
 
                 StringBuilder args = new StringBuilder();
                 args.Append("--app=").Append(Quote(appUrl));
-                args.Append(" --window-size=1360,860");
+                args.Append(AppWindowSizeArgs());
                 args.Append(" --user-data-dir=").Append(Quote(profileDir));
                 args.Append(" --no-first-run --no-default-browser-check");
 
@@ -1082,7 +1109,7 @@ namespace KuzgunCrmSetup
             res["activeUserEmail"] = acc;
             res["isStandalone"] = true;
             res["hasGoogleCloud"] = hasGoogleCloud;
-            res["version"] = "2.4.1";
+            res["version"] = "2.4.2";
             res["updated"] = maxUpdated;
             return res;
         }
@@ -1623,7 +1650,7 @@ namespace KuzgunCrmSetup
 
             Dictionary<string, object> envelope = new Dictionary<string, object>();
             envelope["app"] = "kuzgun-crm";
-            envelope["version"] = "2.4.1";
+            envelope["version"] = "2.4.2";
             envelope["exported_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             envelope["count"] = devices.Count;
             envelope["devices"] = devices;
@@ -2099,7 +2126,7 @@ namespace KuzgunCrmSetup
                 {
                     det.HasCloudConfig = true;
                     string json = File.ReadAllText(cfgFile);
-                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.4.1";
+                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.4.2";
                     det.CloudUrl = SimpleJsonExtract(json, "url");
                 }
 
@@ -2154,7 +2181,7 @@ namespace KuzgunCrmSetup
                 det.TitleColor = Color.FromArgb(14, 116, 144);
                 det.SummaryDetail = string.Format(
                     "Sistemde aktif Kuzgun CRM ({0}) bulundu. Tek tikla guncelleme yapildiginda masaustu uygulamaniz yenilenecek ve tum musteri verileriniz aynen korunacaktir.",
-                    det.CloudVersion ?? "v2.4.1");
+                    det.CloudVersion ?? "v2.4.2");
             }
             else if (det.HasLegacyOzi || det.HasLegacyAppData || det.HasDesktopShortcuts)
             {
@@ -2262,7 +2289,7 @@ namespace KuzgunCrmSetup
             _lblSubtitle.AutoSize = true;
 
             _lblVersion = new Label();
-            _lblVersion.Text = "v2.4.1";
+            _lblVersion.Text = "v2.4.2";
             _lblVersion.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
             _lblVersion.ForeColor = Color.FromArgb(252, 211, 77);
             _lblVersion.Location = new Point(585, 25);
@@ -2410,7 +2437,7 @@ namespace KuzgunCrmSetup
                 _btnStart.Text = "Tek Tıkla Kur";
             }
 
-            AppendLog("Kuzgun CRM v2.4.1 Kurulum ve Yonetim Sihirbazi hazir.");
+            AppendLog("Kuzgun CRM v2.4.2 Kurulum ve Yonetim Sihirbazi hazir.");
             AppendLog("Durum: " + det.SummaryTitle);
         }
 
