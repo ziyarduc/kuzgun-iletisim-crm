@@ -63,8 +63,9 @@
 
                 <div class="p-4 border-t border-gray-800 text-xs text-gray-500 text-center">
                     <template v-if="isCloud">
-                        <div class="mb-1 text-emerald-400 font-medium"><i class="fa-solid fa-cloud mr-1"></i> Google Sheets Bağlantılı</div>
-                        <div v-if="statusInfo && statusInfo.accountEmail" class="mb-1 text-blue-400 truncate px-1" :title="'Eşleşen Google Hesabı: ' + statusInfo.accountEmail">
+                        <div v-if="statusInfo && statusInfo.isStandalone && !statusInfo.hasGoogleCloud" class="mb-1 text-emerald-400 font-medium"><i class="fa-solid fa-desktop mr-1"></i> Masaüstü Uygulaması (Aktif)</div>
+                        <div v-else class="mb-1 text-emerald-400 font-medium"><i class="fa-solid fa-cloud mr-1"></i> Google Sheets Bağlantılı</div>
+                        <div v-if="statusInfo && statusInfo.accountEmail" class="mb-1 text-blue-400 truncate px-1" :title="'Eşleşen Hesap / Konum: ' + statusInfo.accountEmail">
                             <i class="fa-brands fa-google mr-1"></i>{{ statusInfo.accountEmail }}
                         </div>
                         <div v-if="statusInfo" class="mb-1">
@@ -72,12 +73,15 @@
                             <a v-if="statusInfo.url" :href="statusInfo.url" target="_blank" rel="noopener" class="underline hover:text-emerald-300">{{ statusInfo.spreadsheet }}</a>
                             <span v-else>{{ statusInfo.spreadsheet }}</span>
                         </div>
+                        <a href="#" @click.prevent="openSetup" class="inline-block mt-1 mb-1 px-2.5 py-1 rounded bg-blue-900/50 border border-blue-700/60 text-blue-300 hover:bg-blue-800/70 text-[11px] font-medium transition">
+                            <i class="fa-brands fa-google mr-1"></i>{{ statusInfo && statusInfo.isStandalone && !statusInfo.hasGoogleCloud ? 'Google Buluta Bağla' : 'Bulut Ayarı' }}
+                        </a>
                     </template>
                     <template v-else>
                         <div class="mb-1 text-yellow-400"><i class="fa-solid fa-hard-drive mr-1"></i> Yerel mod (bu cihaz)</div>
                         <a href="#" @click.prevent="openSetup" class="block mb-1 text-blue-300 underline hover:text-blue-200">Buluta bağlan</a>
                     </template>
-                    Kuzgun İletişim Yönetim Sistemi<br>v2.3.1
+                    <div>Kuzgun İletişim Yönetim Sistemi<br>v2.3.2</div>
                 </div>
             </aside>
 
@@ -384,7 +388,15 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 <button v-if="isCloud && authed" @click="backupToDriveNow" :disabled="backupRunning" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm flex items-center gap-2 disabled:opacity-50">
                                     <i class="fa-solid fa-cloud-arrow-up" :class="{'fa-spin': backupRunning}"></i>
-                                    <span>Şimdi Drive'a Yedekle</span>
+                                    <span>{{ statusInfo && statusInfo.isStandalone && !statusInfo.hasGoogleCloud ? 'Şimdi Yedekle (Disk & Drive)' : 'Şimdi Drive\'a Yedekle' }}</span>
+                                </button>
+                                <button v-if="statusInfo && statusInfo.isStandalone" @click="openBackupFolderOnDisk" class="bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-2 rounded-lg text-sm font-medium transition border border-amber-200 flex items-center gap-2" title="Bilgisayardaki Yedek Klasörünü Aç">
+                                    <i class="fa-solid fa-folder-open"></i>
+                                    <span>Yedek Klasörünü Aç</span>
+                                </button>
+                                <button v-if="!isCloud || (statusInfo && statusInfo.isStandalone && !statusInfo.hasGoogleCloud)" @click="openSetup" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm flex items-center gap-2">
+                                    <i class="fa-brands fa-google"></i>
+                                    <span>Google Bulut Bağla</span>
                                 </button>
                                 <button @click="exportBackup" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm flex items-center gap-2">
                                     <i class="fa-solid fa-download"></i>
@@ -668,22 +680,35 @@
             </div>
         </div>
 
-        <!-- İlk Açılış / Bulut Bağlantı Sihirbazı (dosyadan açıldığında) -->
+        <!-- İlk Açılış / Bulut Bağlantı Sihirbazı -->
         <div v-if="showSetup" class="fixed inset-0 bg-gray-900 bg-opacity-95 backdrop-blur-sm flex items-center justify-center p-4 z-[70]">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-full overflow-y-auto">
-                <div class="bg-gray-900 text-white p-6 text-center">
-                    <div class="text-4xl mb-2">🦅</div>
-                    <h3 class="text-xl font-bold">Hoş geldiniz — Bulut Bağlantısı</h3>
-                    <p class="text-gray-400 text-sm mt-1">Bu dosya şu an buluta bağlı değil (yerel mod).</p>
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden max-h-full overflow-y-auto">
+                <div class="bg-gray-900 text-white p-5 text-center relative">
+                    <button @click="skipSetup" class="absolute right-4 top-4 text-gray-400 hover:text-white text-xl leading-none" title="Kapat">&times;</button>
+                    <div class="text-3xl mb-1">🦅</div>
+                    <h3 class="text-lg font-bold">Google Bulut &amp; E-Tablo Eşleme Sihirbazı</h3>
+                    <p class="text-gray-400 text-xs mt-1">Hiçbir teknik ayar gerektirmeden 30 saniyede Google Sheets &amp; Drive hesabınızı bağlayın.</p>
                 </div>
                 <div class="p-6 space-y-4 text-sm text-gray-700">
-                    <ol class="list-decimal ml-5 space-y-1 text-xs text-gray-600">
-                        <li><b>KuzgunCRM_Kurulum.exe</b> dosyasına çift tıklayın (kurulum, güncelleme ve Google hesabı eşleme otomatik yapılır).</li>
-                        <li>Kurulum bitince masaüstündeki <b>Kuzgun CRM</b> kısayolu bağlı olarak açılır.</li>
-                        <li>Elle bağlamak isterseniz web adresini (…/exec) aşağı yapıştırın; varsayılan PIN ile Google hesabınız otomatik eşlenir.</li>
-                    </ol>
+                    <!-- 2 Tıkla Kolay Kurulum Kutusu -->
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+                        <div class="font-bold text-emerald-900 text-xs flex items-center justify-between">
+                            <span><i class="fa-solid fa-bolt text-amber-500 mr-1"></i>2 TIKLA OTOMATİK GOOGLE BAĞLANTISI (ÖNERİLEN)</span>
+                            <span v-if="clipboardWatching" class="text-[11px] text-emerald-700 font-semibold animate-pulse"><i class="fa-solid fa-eye mr-1"></i>Pano dinleniyor...</span>
+                        </div>
+                        <button type="button" @click="copyCodeAndOpenGoogle" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white p-3 rounded-lg font-semibold text-xs transition shadow-sm flex items-center justify-center gap-2">
+                            <i class="fa-solid" :class="codeCopied ? 'fa-check' : 'fa-wand-magic-sparkles'"></i>
+                            <span>{{ codeCopied ? '✓ 1. Sunucu Kodu Kopyalandı ve Google Açıldı!' : '1. Sunucu Kodunu Otomatik Kopyala ve Google\'ı Aç' }}</span>
+                        </button>
+                        <ol class="list-decimal ml-4 space-y-1 text-xs text-emerald-950 leading-relaxed">
+                            <li>Yukarıdaki yeşil tuşa basın (Sunucu kodu panonuza otomatik kopyalanır ve <b>script.new</b> açılır).</li>
+                            <li>Açılan Google sayfasında kod ekranına tıklayıp <b>Ctrl + A</b> ve <b>Ctrl + V</b> yapın (Kodu yapıştırın).</li>
+                            <li>Sağ üstten <b>Dağıt &gt; Yeni dağıtım &gt; Tür: Web uygulaması &gt; Erişim: Herkes &gt; Dağıt</b> seçip çıkan <b>…/exec</b> adresini <b>Kopyala</b>'ya basın <i>(Kopyaladığınız anda otomatik algılanıp bağlanır!)</i>.</li>
+                        </ol>
+                    </div>
+
                     <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Web uygulaması adresi</label>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Web uygulaması adresi (Kopyaladığınızda otomatik dolar veya yapıştırın)</label>
                         <div class="flex gap-2">
                             <input type="url" v-model="setupUrl" @keyup.enter="saveSetup" placeholder="https://script.google.com/macros/s/.../exec" class="flex-1 p-2.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none">
                             <button type="button" @click="pasteSetupUrl" class="px-3 border border-gray-300 rounded-lg text-xs hover:bg-gray-100" title="Panodan yapıştır"><i class="fa-solid fa-paste"></i></button>
@@ -693,7 +718,9 @@
                     <button @click="saveSetup" :disabled="setupBusy" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition font-semibold disabled:opacity-60">
                         <i class="fa-solid mr-2" :class="setupBusy ? 'fa-circle-notch fa-spin' : 'fa-link'"></i>{{ setupBusy ? 'Bağlanılıyor...' : 'Bağlan ve Google Hesabını Eşle' }}
                     </button>
-                    <button @click="skipSetup" class="w-full bg-gray-100 text-gray-600 p-2.5 rounded-lg hover:bg-gray-200 transition text-xs">Şimdilik yerel modda devam et</button>
+                    <button @click="skipSetup" class="w-full bg-gray-100 text-gray-600 p-2.5 rounded-lg hover:bg-gray-200 transition text-xs">
+                        {{ statusInfo && statusInfo.isStandalone ? 'Pencereyi Kapat (Masaüstü Veritabanı Aktif)' : 'Şimdilik yerel modda devam et' }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -742,7 +769,7 @@
                         <div class="border-t border-gray-200 pt-1.5 mt-1.5">
                             <div class="text-gray-500 mb-0.5">Veritabanı (Google Sheets)</div>
                             <a v-if="statusInfo && statusInfo.url" :href="statusInfo.url" target="_blank" rel="noopener" class="text-blue-600 hover:underline break-all font-medium"><i class="fa-solid fa-table mr-1"></i>{{ statusInfo.spreadsheet }}</a>
-                            <div v-else class="text-gray-400">Bilgi alınamadı</div>
+                            <div v-else class="text-gray-400">{{ statusInfo && statusInfo.spreadsheet ? statusInfo.spreadsheet : 'Bilgi alınamadı' }}</div>
                             <div class="text-gray-500 mt-0.5 text-xs">{{ devices.length }} kayıt · Otomatik Yedek: <span :class="statusInfo && statusInfo.dailyBackupActive ? 'text-emerald-600 font-semibold' : 'text-amber-600'">{{ statusInfo && statusInfo.dailyBackupActive ? 'Aktif (03:00)' : 'Pasif' }}</span></div>
                         </div>
                     </div>
@@ -756,6 +783,7 @@
                         <button @click="changePin" :disabled="syncState === 'syncing'" class="mt-2 w-full bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-60">PIN'i Kaydet</button>
                     </div>
                     <div class="space-y-2">
+                        <button @click="settingsOpen = false; openSetup()" class="w-full bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition font-medium"><i class="fa-brands fa-google mr-2"></i>Google Bulut Bağlantısını Yapılandır</button>
                         <button @click="installBackup" class="w-full bg-emerald-600 text-white p-2 rounded-lg hover:bg-emerald-700 transition font-medium"><i class="fa-brands fa-google-drive mr-2"></i>Günlük Drive Yedeğini Kur / Onar</button>
                         <button @click="backupToDriveNow" :disabled="backupRunning" class="w-full bg-gray-100 text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Şimdi Drive'a Yedekle</button>
                         <button @click="signOut" class="w-full bg-gray-100 text-red-600 p-2 rounded-lg hover:bg-red-50 transition"><i class="fa-solid fa-right-from-bracket mr-2"></i>Çıkış (bu cihazdaki PIN'i unut)</button>
@@ -805,12 +833,22 @@
         function isExecUrl(u) {
             return /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[\w-]+\/exec\/?$/.test(String(u || '').trim());
         }
+        function isLocalApiUrl(u) {
+            return /^http:\/\/127\.0\.0\.1:\d+\/api\/?$/.test(String(u || '').trim());
+        }
 
         const Gas = {
             inScript() {
                 return typeof google !== 'undefined' && google.script && google.script.run;
             },
-            url() {
+            localApi() {
+                if (typeof window !== 'undefined' && window.__STANDALONE_API__ && isLocalApiUrl(window.__STANDALONE_API__)) {
+                    return String(window.__STANDALONE_API__).trim();
+                }
+                if (isLocalApiUrl(EMBED_URL)) return EMBED_URL.trim();
+                return '';
+            },
+            cloudExecUrl() {
                 let u = '';
                 try {
                     const q = new URLSearchParams(location.search).get('u');
@@ -819,6 +857,11 @@
                 try { u = localStorage.getItem(CLOUD_URL_KEY) || ''; } catch (e) {}
                 if (!u && isExecUrl(EMBED_URL)) u = EMBED_URL;
                 return isExecUrl(u) ? u.trim() : '';
+            },
+            url() {
+                const c = this.cloudExecUrl();
+                if (c) return c;
+                return this.localApi();
             },
             setUrl(u) {
                 try { if (u) localStorage.setItem(CLOUD_URL_KEY, u.trim()); else localStorage.removeItem(CLOUD_URL_KEY); } catch (e) {}
@@ -830,7 +873,8 @@
                 const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
                 const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
                 try {
-                    const res = await fetch(this.url(), {
+                    const targetUrl = this.url();
+                    const res = await fetch(targetUrl, {
                         method: 'POST',
                         redirect: 'follow',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -843,6 +887,15 @@
                         throw new Error('BAGLANTI: Sunucu beklenen yanıtı vermedi. Web uygulaması "Herkes" erişimiyle yayınlanmış ve güncel sürüm olmalı (Kurulum.exe\'yi tekrar çalıştırın).');
                     }
                     if (!data.ok) throw new Error(data.error || 'Bilinmeyen sunucu hatası');
+                    // Eger hem Google Cloud hem yerel masaustu sunucusu varsa yerel sunucuyu da arka planda senkron tut
+                    const loc = this.localApi();
+                    if (loc && targetUrl !== loc && (name === 'upsertDevice' || name === 'deleteDevice' || name === 'importDevices' || name === 'replaceAllDevices' || name === 'backupToDrive')) {
+                        fetch(loc, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ fn: name, args: args || [] })
+                        }).catch(() => {});
+                    }
                     return data.result;
                 } catch (e) {
                     if (e && e.name === 'AbortError') {
@@ -949,6 +1002,9 @@
                     setupUrl: '',
                     setupError: '',
                     setupBusy: false,
+                    codeCopied: false,
+                    clipboardWatching: false,
+                    clipboardTimer: null,
                     pinInput: '',
                     pinError: '',
                     syncState: 'init',
@@ -1430,12 +1486,107 @@
                     return await this.connect();
                 },
                 openSetup() {
-                    this.setupUrl = Gas.url() || '';
+                    this.setupUrl = Gas.cloudExecUrl() || '';
                     this.setupError = '';
+                    this.codeCopied = false;
                     this.showSetup = true;
+                    this.startClipboardWatch();
+                },
+                startClipboardWatch() {
+                    this.stopClipboardWatch();
+                    if (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('jsdom')) return;
+                    this.clipboardWatching = true;
+                    this.clipboardTimer = setInterval(async () => {
+                        if (!this.showSetup || this.setupBusy) return;
+                        try {
+                            const loc = Gas.localApi();
+                            if (loc) {
+                                const res = await fetch(loc, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                    body: JSON.stringify({ fn: 'checkClipboardExecUrl', args: [] })
+                                });
+                                const data = await res.json();
+                                if (data && data.ok && data.result && data.result.found && isExecUrl(data.result.url)) {
+                                    const foundUrl = data.result.url.trim();
+                                    if (this.setupUrl !== foundUrl) {
+                                        this.setupUrl = foundUrl;
+                                        this.showToast('Kopyalanan Google adresi otomatik algılandı, bağlanılıyor...', 'ok');
+                                        await this.saveSetup();
+                                    }
+                                    return;
+                                }
+                            }
+                            if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText && document.hasFocus && document.hasFocus()) {
+                                const t = ((await navigator.clipboard.readText()) || '').trim();
+                                if (isExecUrl(t) && this.setupUrl !== t) {
+                                    this.setupUrl = t;
+                                    this.showToast('Kopyalanan Google adresi otomatik algılandı, bağlanılıyor...', 'ok');
+                                    await this.saveSetup();
+                                }
+                            }
+                        } catch (e) {}
+                    }, 2000);
+                },
+                stopClipboardWatch() {
+                    this.clipboardWatching = false;
+                    if (this.clipboardTimer) {
+                        clearInterval(this.clipboardTimer);
+                        this.clipboardTimer = null;
+                    }
+                },
+                async copyCodeAndOpenGoogle() {
+                    try {
+                        const loc = Gas.localApi();
+                        if (loc) {
+                            const res = await fetch(loc, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                body: JSON.stringify({ fn: 'copyCodeGsAndOpenGoogle', args: [] })
+                            });
+                            const data = await res.json();
+                            if (data && data.ok) {
+                                this.codeCopied = true;
+                                this.showToast('Sunucu kodu panoya kopyalandı ve Google Apps Script açıldı!', 'ok');
+                                this.startClipboardWatch();
+                                return;
+                            }
+                        }
+                        window.open('https://script.new', '_blank');
+                        this.codeCopied = true;
+                        this.showToast('Google Apps Script açıldı', 'ok');
+                        this.startClipboardWatch();
+                    } catch (e) {
+                        window.open('https://script.new', '_blank');
+                    }
+                },
+                async openBackupFolderOnDisk() {
+                    try {
+                        const loc = Gas.localApi();
+                        if (!loc) return;
+                        await fetch(loc, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ fn: 'openBackupFolder', args: [] })
+                        });
+                        this.showToast('Yedek klasörü Windows Gezgini\'nde açıldı', 'ok');
+                    } catch (e) {}
                 },
                 async pasteSetupUrl() {
                     try {
+                        const loc = Gas.localApi();
+                        if (loc) {
+                            const res = await fetch(loc, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                body: JSON.stringify({ fn: 'checkClipboardExecUrl', args: [true] })
+                            });
+                            const data = await res.json();
+                            if (data && data.ok && data.result && data.result.text) {
+                                this.setupUrl = data.result.text.trim();
+                                return;
+                            }
+                        }
                         const t = ((await navigator.clipboard.readText()) || '').trim();
                         if (t) this.setupUrl = t;
                     } catch (e) {
@@ -1443,6 +1594,7 @@
                     }
                 },
                 skipSetup() {
+                    this.stopClipboardWatch();
                     this.showSetup = false;
                     try { sessionStorage.setItem('kuzgun_setup_skip', '1'); } catch (e) {}
                 },
@@ -1454,10 +1606,11 @@
                     }
                     this.setupBusy = true;
                     this.setupError = '';
-                    const eski = Gas.url();
+                    const eski = Gas.cloudExecUrl();
                     Gas.setUrl(u);
                     try {
                         const info = await Gas.call('crmStatus', ['kuzgun2024'], 30000);
+                        this.stopClipboardWatch();
                         this.pinInput = 'kuzgun2024';
                         this.isCloud = true;
                         this.authed = true;
@@ -1465,12 +1618,21 @@
                         this.showSetup = false;
                         this.statusInfo = info;
                         try { localStorage.setItem(PIN_KEY, this.pinInput); } catch (e) {}
+                        const loc = Gas.localApi();
+                        if (loc) {
+                            fetch(loc, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                body: JSON.stringify({ fn: 'saveCloudExecUrl', args: [u] })
+                            }).catch(() => {});
+                        }
                         this.showToast('Google hesabı bağlandı' + (info && info.accountEmail ? ': ' + info.accountEmail : ''), 'ok');
                         await this.pull();
                         this.fetchDriveBackups();
                     } catch (e) {
                         const msg = String((e && e.message) || e || '');
                         if (msg.indexOf('PIN_HATALI') !== -1) {
+                            this.stopClipboardWatch();
                             // Adres doğru, PIN değişmiş: giriş ekranına geç
                             this.isCloud = true;
                             this.showSetup = false;

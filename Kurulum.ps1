@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 $Kaynak = $PSScriptRoot
 $Ana = Join-Path $env:LOCALAPPDATA 'KuzgunCRM'
 $Proje = Join-Path $Ana 'proje'
-$Surdur = 'v2.3.1'
+$Surdur = 'v2.3.2'
 function ConfigYol { return (Join-Path $Ana 'kurulum.json') }
 
 function Satir { param($renk, $metin) Write-Host $metin -ForegroundColor $renk }
@@ -1306,10 +1306,14 @@ function Asama4_Tamam {
         Basari '  Mevcut CRM kurulumunuz basariyla guncellendi:'
     } else {
         Baslik ('ISLEM TAMAMLANDI - YENI KURULUM HAZIR (' + $Surdur + ')')
-        Basari '  CRM basariyla kuruldu ve kullanima hazir:'
+        Basari '  CRM Masaustu Uygulamasi basariyla kuruldu ve kullanima hazir:'
     }
-    if ($sonuc.url) {
-        Satir White ('    ADRES         : ' + $sonuc.url)
+    $hedefExe = Join-Path $Ana 'KuzgunCRM.exe'
+    if (Test-Path $hedefExe) {
+        Satir White ('    UYGULAMA      : ' + $hedefExe)
+    }
+    if ($sonuc.url -and $sonuc.url -like 'https://*') {
+        Satir White ('    BULUT ADRESI  : ' + $sonuc.url)
     }
     if ($sonuc.account) {
         Satir White ('    GOOGLE HESABI : ' + $sonuc.account + ' (Otomatik Eslendi)')
@@ -1319,17 +1323,21 @@ function Asama4_Tamam {
         Satir Green ("    TASINAN VERI  : $($sonuc.migratedCount) cihaz kaydi yeni surume basariyla aktarildi")
     }
     Write-Host ''
-    Satir Gray '  - CRM simdi otomatik aciliyor.'
-    Satir Gray '  - Masaustune "Kuzgun CRM" kisayolu eklendi / guncellendi (eski surum dosyalari yedeklenip kaldirildi).'
-    Satir Gray '  - Tekrar guncellemek icin KuzgunCRM_Kurulum.exe dosyasina cift tiklamaniz yeterlidir.'
+    Satir Gray '  - CRM masaustu uygulamasi simdi otomatik aciliyor.'
+    Satir Gray '  - Masaustune "Kuzgun CRM" uygulama kisayolu eklendi / guncellendi.'
+    Satir Gray '  - Google Bulut eslemesi icin uygulama icindeki "Google Buluta Bagla (2 Tikla)" butonunu kullanabilirsiniz.'
     Write-Host ''
     if ($script:ClaspLog) {
         $log = Join-Path $Ana 'kurulum.log'
         Set-Content -Path $log -Value $script:ClaspLog -Encoding UTF8
         Satir Gray ('  Kurulum logu: ' + $log)
     }
-    if (-not $Sessiz -and $sonuc.url) {
-        try { Start-Process $sonuc.url } catch {}
+    if (-not $Sessiz) {
+        if (Test-Path $hedefExe) {
+            try { Start-Process -FilePath $hedefExe -ArgumentList '-Baslat' } catch {}
+        } elseif ($sonuc.url) {
+            try { Start-Process $sonuc.url } catch {}
+        }
     }
     Write-Host ''
     Satir Green '  Otomatik islem basariyla tamamlandi!'
@@ -1379,9 +1387,31 @@ function KisayolOlustur {
         [string]$url,
         $cihazlar = $null
     )
+    if (-not (Test-Path $Ana)) { New-Item -ItemType Directory -Path $Ana -Force | Out-Null }
+
+    # 0) Standalone KuzgunCRM.exe kopyasini %LOCALAPPDATA%\KuzgunCRM\KuzgunCRM.exe olarak yerlestir
+    $hedefExe = Join-Path $Ana 'KuzgunCRM.exe'
+    $kaynakExeler = @()
+    if ($ExeDir) {
+        $kaynakExeler += (Join-Path $ExeDir 'KuzgunCRM_Kurulum.exe')
+        $kaynakExeler += (Join-Path $ExeDir 'KuzgunCRM.exe')
+    }
+    $kaynakExeler += (Join-Path $Kaynak 'KuzgunCRM_Kurulum.exe')
+    $kaynakExeler += (Join-Path (Split-Path -Parent $Kaynak) 'KuzgunCRM_Kurulum.exe')
+    foreach ($adayExe in $kaynakExeler) {
+        if ($adayExe -and (Test-Path $adayExe)) {
+            try {
+                if ($adayExe -ne $hedefExe) {
+                    Copy-Item -Path $adayExe -Destination $hedefExe -Force -ErrorAction SilentlyContinue
+                }
+                break
+            } catch {}
+        }
+    }
+
     # 1) Web adresi ve gomulu veriler enjekte edilmis yerel HTML kopya
     $html = Get-Content (Join-Path $Kaynak 'Kuzgun_Iletisim_CRM.html') -Raw -Encoding UTF8
-    if ($url) {
+    if ($url -and $url -like 'https://*') {
         $html = $html.Replace("const EMBED_URL = '';", "const EMBED_URL = '" + $url + "';")
     }
 
@@ -1398,26 +1428,48 @@ function KisayolOlustur {
     if ($cihazlar -and @($cihazlar).Count -gt 0) {
         $devJson = ConvertTo-Json -InputObject @($cihazlar) -Depth 5 -Compress
         $html = $html.Replace("const EMBED_DEVICES = [];", "const EMBED_DEVICES = " + $devJson + ";")
+
+        # Standalone sunucu veritabani (veritabani.json) ve ilk yedegi olustur
+        $vtDosya = Join-Path $Ana 'veritabani.json'
+        if (-not (Test-Path $vtDosya)) {
+            [System.IO.File]::WriteAllText($vtDosya, $devJson, (New-Object System.Text.UTF8Encoding($false)))
+        }
+        $yedekDizin = Join-Path $Ana 'yedekler'
+        if (-not (Test-Path $yedekDizin)) { New-Item -ItemType Directory -Path $yedekDizin -Force | Out-Null }
+        $ilkYedek = Join-Path $yedekDizin ('kuzgun-crm-' + (Get-Date -Format 'yyyy-MM-dd') + '.json')
+        if (-not (Test-Path $ilkYedek)) {
+            $yedekZarfi = @{
+                app = 'kuzgun-crm'
+                version = $Surdur
+                exported_at = (Get-Date -Format o)
+                count = @($cihazlar).Count
+                devices = @($cihazlar)
+            }
+            $yedekJson = ConvertTo-Json -InputObject $yedekZarfi -Depth 6
+            [System.IO.File]::WriteAllText($ilkYedek, $yedekJson, (New-Object System.Text.UTF8Encoding($false)))
+        }
     }
 
     $yerelHtml = Join-Path $Ana 'Kuzgun_CRM.html'
-    if (-not (Test-Path $Ana)) { New-Item -ItemType Directory -Path $Ana -Force | Out-Null }
     [System.IO.File]::WriteAllText($yerelHtml, $html, (New-Object System.Text.UTF8Encoding($false)))
+
+    $kisayolHedef = if (Test-Path $hedefExe) { $hedefExe } else { $yerelHtml }
+    $kisayolArg = if (Test-Path $hedefExe) { '-Baslat' } else { '' }
+    $kisayolIkon = if (Test-Path $hedefExe) { "$hedefExe,0" } else { 'shell32.dll,13' }
 
     $olustu = 0
     foreach ($d in (MasaustuKlasorleri)) {
         try {
-            # Ana kisayol: .lnk (yerel dosya, her zaman guncel adres ve veriler gomulu) - ikon ile
             $lnk = Join-Path $d 'Kuzgun CRM.lnk'
             $ws = New-Object -ComObject WScript.Shell
             $k = $ws.CreateShortcut($lnk)
-            $k.TargetPath = $yerelHtml
+            $k.TargetPath = $kisayolHedef
+            if ($kisayolArg) { $k.Arguments = $kisayolArg }
             $k.WorkingDirectory = $Ana
             $k.Description = 'Kuzgun Iletisim CRM ' + $Surdur
-            $k.IconLocation = 'shell32.dll,13'
+            $k.IconLocation = $kisayolIkon
             $k.Save()
-            # Bulut adresini dogrudan acan ikinci kisayol
-            if ($url) { "[InternetShortcut]`r`nURL=$url" | Set-Content (Join-Path $d 'Kuzgun CRM (Bulut).url') -Encoding ASCII }
+            if ($url -and $url -like 'https://*') { "[InternetShortcut]`r`nURL=$url" | Set-Content (Join-Path $d 'Kuzgun CRM (Bulut).url') -Encoding ASCII }
             $olustu++
             Basari ('  [OK] Masaustu kisayolu: ' + $lnk)
         } catch { Uyari ('  [!] Kisayol olusturulamadi (' + $d + '): ' + $_.Exception.Message) }
@@ -1426,9 +1478,14 @@ function KisayolOlustur {
     try {
         $sm = Join-Path ([Environment]::GetFolderPath('Programs')) 'Kuzgun CRM.lnk'
         $ws2 = New-Object -ComObject WScript.Shell
-        $k2 = $ws2.CreateShortcut($sm); $k2.TargetPath = $yerelHtml; $k2.WorkingDirectory = $Ana; $k2.IconLocation = 'shell32.dll,13'; $k2.Save()
+        $k2 = $ws2.CreateShortcut($sm)
+        $k2.TargetPath = $kisayolHedef
+        if ($kisayolArg) { $k2.Arguments = $kisayolArg }
+        $k2.WorkingDirectory = $Ana
+        $k2.IconLocation = $kisayolIkon
+        $k2.Save()
     } catch {}
-    if ($olustu -eq 0) { Uyari ('  [!] Masaustu kisayolu olusmadi. Dosyayi elle acabilirsiniz: ' + $yerelHtml) }
+    if ($olustu -eq 0) { Uyari ('  [!] Masaustu kisayolu olusmadi. Uygulamayi buradan acabilirsiniz: ' + $kisayolHedef) }
 }
 
 function OtomatikCalistir {
@@ -1441,7 +1498,7 @@ function OtomatikCalistir {
         Satir Cyan ('    Mevcut verileriniz taranip korunarak yeni surum (' + $Surdur + ') uzerine yaziliyor...')
     } else {
         Baslik ('TEK TIKLA OTOMATIK KURULUM BASLATILIYOR (' + $Surdur + ')')
-        Satir Cyan '    Hicbir ek ayar gerektirmeden otomatik kurulum ve Google eslemesi yapiliyor...'
+        Satir Cyan '    Masaustu uygulamasi, yerel veritabani ve otomatik yedekleme sistemi kuruluyor...'
     }
 
     $durum = Asama2_Gereksinim
@@ -1454,105 +1511,54 @@ function OtomatikCalistir {
     # 2. Dosyalari hazirla (migrated veriler index.html icine de enjekte edilir)
     DosyalariHazirla -erisim $erisim
 
-    # 3. Bulut adimi basarisiz olsa bile masaustu kisayolu ve yerel uygulama olussun (adres ve veriler gomulur)
-    $varsayilanUrl = if ($onceki -and $onceki.Url) { $onceki.Url } else { '' }
+    # 3. Masaustu kisayolunu ve Standalone KuzgunCRM.exe uygulamasini olustur
+    $varsayilanUrl = if ($onceki -and $onceki.Url -and $onceki.Url -like 'https://*') { $onceki.Url } else { '' }
     KisayolOlustur -url $varsayilanUrl -cihazlar $migrated
 
-    if (-not $durum.Internet) {
-        Uyari '  [!] Internet baglantisi yok; CRM yerel modda kuruldu ve masaustu kisayolu hazirlandi.'
-        $yerelSonuc = @{
-            url = (Join-Path $Ana 'Kuzgun_CRM.html')
-            deploymentId = $(if ($onceki -and $onceki.DeploymentId) { $onceki.DeploymentId } else { '' })
-            scriptId = $(if ($onceki -and $onceki.ScriptId) { $onceki.ScriptId } else { '' })
-            account = ''
-            migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
-        }
-        ConfigYaz @{
-            url = $varsayilanUrl
-            deploymentId = $yerelSonuc.deploymentId
-            scriptId = $yerelSonuc.scriptId
-            googleAccount = ''
-            erisim = $erisim
-            guncelleme = (Get-Date -Format o)
-            surum = $Surdur
-            migratedCount = $yerelSonuc.migratedCount
-        }
-        Asama4_Tamam -sonuc $yerelSonuc -guncellendi $guncellemeMi
-        return
-    }
-
-    if (-not $durum.Node) {
-        $kuruldu = NodeOtomatikKur
-        if (-not $kuruldu -and -not (KomutVarMi 'node')) {
-            Uyari '  [!] Node.js bulunamadi; CRM yerel modda kuruldu ve masaustu kisayolu hazirlandi.'
-            $yerelSonuc = @{
-                url = (Join-Path $Ana 'Kuzgun_CRM.html')
-                deploymentId = $(if ($onceki -and $onceki.DeploymentId) { $onceki.DeploymentId } else { '' })
-                scriptId = $(if ($onceki -and $onceki.ScriptId) { $onceki.ScriptId } else { '' })
-                account = ''
-                migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
-            }
+    # Eger kullanicida zaten clasp oturumu (.clasprc.json) ve aktif bulut projesi varsa sessizce bulutu da guncelle;
+    # aksi halde clasp/npm yuzunden kurulumu bekletme veya durdurma!
+    $claspOturumVar = (Test-Path (Join-Path $env:USERPROFILE '.clasprc.json')) -and ($onceki -and $onceki.ScriptId)
+    if ($durum.Internet -and $durum.Node -and ($claspOturumVar -or $Yenile)) {
+        try {
+            $sonuc = Asama_OtomatikKurulum -erisim $erisim -onceki $onceki
             ConfigYaz @{
-                url = $varsayilanUrl
-                deploymentId = $yerelSonuc.deploymentId
-                scriptId = $yerelSonuc.scriptId
-                googleAccount = ''
+                url = $sonuc.url
+                deploymentId = $sonuc.deploymentId
+                scriptId = $sonuc.scriptId
+                googleAccount = $sonuc.account
                 erisim = $erisim
                 guncelleme = (Get-Date -Format o)
                 surum = $Surdur
-                migratedCount = $yerelSonuc.migratedCount
+                migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
             }
-            Asama4_Tamam -sonuc $yerelSonuc -guncellendi $guncellemeMi
+            KisayolOlustur -url $sonuc.url -cihazlar $migrated
+            $sonuc['migratedCount'] = $(if ($migrated) { @($migrated).Count } else { 0 })
+            Asama4_Tamam -sonuc $sonuc -guncellendi $guncellemeMi
             return
+        } catch {
+            Uyari ('  [!] Clasp bulut guncellemesi atlandi: ' + $_.Exception.Message)
         }
     }
 
-    # 4. Bulut projesini ve yayinini olustur / guncelle
-    try {
-        $sonuc = Asama_OtomatikKurulum -erisim $erisim -onceki $onceki
-
-        # 5. Konfigurasyonu yaz
-        ConfigYaz @{
-            url = $sonuc.url
-            deploymentId = $sonuc.deploymentId
-            scriptId = $sonuc.scriptId
-            googleAccount = $sonuc.account
-            erisim = $erisim
-            guncelleme = (Get-Date -Format o)
-            surum = $Surdur
-            migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
-        }
-
-        # 6. Masaustu kisayolunu dogrulanmis yeni URL ve gomulu verilerle guncelle
-        KisayolOlustur -url $sonuc.url -cihazlar $migrated
-
-        # 7. Islemi tamamla
-        $sonuc['migratedCount'] = $(if ($migrated) { @($migrated).Count } else { 0 })
-        Asama4_Tamam -sonuc $sonuc -guncellendi $guncellemeMi
-    } catch {
-        Uyari ('  [!] Bulut senkronizasyonu su an tamamlanamadi: ' + $_.Exception.Message)
-        Basari '  [OK] Merak etmeyin! Kuzgun CRM YEREL MODDA tam fonksiyonlu olarak kuruldu ve masaustune eklendi.'
-        Bilgi '       Bulut eslemesini daha sonra yapmak isterseniz https://script.google.com/home/usersettings adresinden'
-        Bilgi '       Google Apps Script API anahtarini ACIK yapip bu kurulum sihirbazini tekrar calistirabilirsiniz.'
-        $yerelSonuc = @{
-            url = $(if ($varsayilanUrl) { $varsayilanUrl } else { (Join-Path $Ana 'Kuzgun_CRM.html') })
-            deploymentId = $(if ($onceki -and $onceki.DeploymentId) { $onceki.DeploymentId } else { '' })
-            scriptId = $(if ($onceki -and $onceki.ScriptId) { $onceki.ScriptId } else { '' })
-            account = ''
-            migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
-        }
-        ConfigYaz @{
-            url = $varsayilanUrl
-            deploymentId = $yerelSonuc.deploymentId
-            scriptId = $yerelSonuc.scriptId
-            googleAccount = ''
-            erisim = $erisim
-            guncelleme = (Get-Date -Format o)
-            surum = $Surdur
-            migratedCount = $yerelSonuc.migratedCount
-        }
-        Asama4_Tamam -sonuc $yerelSonuc -guncellendi $guncellemeMi
+    Basari '  [OK] Kuzgun CRM Standalone Masaustu Uygulamasi, Veritabani ve Yedekleme Sistemi hazir!'
+    $yerelSonuc = @{
+        url = $varsayilanUrl
+        deploymentId = $(if ($onceki -and $onceki.DeploymentId) { $onceki.DeploymentId } else { '' })
+        scriptId = $(if ($onceki -and $onceki.ScriptId) { $onceki.ScriptId } else { '' })
+        account = ''
+        migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
     }
+    ConfigYaz @{
+        url = $varsayilanUrl
+        deploymentId = $yerelSonuc.deploymentId
+        scriptId = $yerelSonuc.scriptId
+        googleAccount = ''
+        erisim = $erisim
+        guncelleme = (Get-Date -Format o)
+        surum = $Surdur
+        migratedCount = $yerelSonuc.migratedCount
+    }
+    Asama4_Tamam -sonuc $yerelSonuc -guncellendi $guncellemeMi
 }
 
 function ManuelRehber {
