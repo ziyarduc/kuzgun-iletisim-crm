@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -759,6 +759,19 @@ namespace KuzgunCrmSetup
                 _btnStart.Text = "Tek Tıkla Kur";
             }
 
+            try
+            {
+                string localHtml = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "KuzgunCRM", "Kuzgun_CRM.html");
+                if (det.HasCloudConfig || File.Exists(localHtml))
+                {
+                    _btnOpenCrm.Visible = true;
+                    _btnOpenCrm.Enabled = true;
+                }
+            }
+            catch {}
+
             AppendLog("Kuzgun CRM v2.3.1 Kurulum ve Yonetim Sihirbazi hazir.");
             AppendLog("Durum: " + det.SummaryTitle);
         }
@@ -804,6 +817,7 @@ namespace KuzgunCrmSetup
                 StringBuilder sb = new StringBuilder();
                 sb.Append("-NoProfile -ExecutionPolicy Bypass -File ");
                 sb.Append(Program.Quote(Path.Combine(baseDir, "Kurulum.ps1")));
+                sb.Append(" -Sessiz");
                 if (!string.IsNullOrEmpty(exeDir))
                 {
                     sb.Append(" -ExeDir ");
@@ -906,7 +920,7 @@ namespace KuzgunCrmSetup
             {
                 SetStep("Aşama 4: Masaüstü kısayolları ve entegrasyon oluşturuluyor...", 90);
             }
-            else if (upper.Contains("KURULUM TAMAMLANDI") || upper.Contains("URET TAMAM") || upper.Contains("ASAMA 4 - TAMAM"))
+            else if (upper.Contains("ISLEM TAMAMLANDI") || upper.Contains("KURULUM TAMAMLANDI") || upper.Contains("URET TAMAM") || upper.Contains("ASAMA 4 - TAMAM"))
             {
                 SetStep("Kurulum ve veri aktarımı başarıyla tamamlandı!", 100);
             }
@@ -929,6 +943,19 @@ namespace KuzgunCrmSetup
         {
             _isInstalling = false;
             ExitCode = exitCode;
+
+            try
+            {
+                string localHtml = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "KuzgunCRM", "Kuzgun_CRM.html");
+                if (File.Exists(localHtml))
+                {
+                    _btnOpenCrm.Visible = true;
+                    _btnOpenCrm.Enabled = true;
+                }
+            }
+            catch {}
 
             if (exitCode == 0)
             {

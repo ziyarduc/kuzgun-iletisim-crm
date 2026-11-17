@@ -69,6 +69,8 @@ function PathYenile {
 function NodeOtomatikKur {
     Bilgi '  [ ] Node.js sistemde bulunamadi, otomatik kuruluyor (winget)...'
     if (KomutVarMi 'winget') {
+        $eskiEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
         try {
             & winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent 2>&1 | Out-Null
             PathYenile
@@ -76,7 +78,9 @@ function NodeOtomatikKur {
                 Basari '  [OK] Node.js winget ile otomatik kuruldu!'
                 return $true
             }
-        } catch {}
+        } catch {} finally {
+            $ErrorActionPreference = $eskiEap
+        }
     }
     try {
         Bilgi '  [ ] Node.js resmi MSI paketi indiriliyor ve sessiz kuruluyor (~25 MB)...'
@@ -127,14 +131,30 @@ function Asama2_Gereksinim {
 
     $nodeOk = $false; $nodeS = 'YOK'
     if (KomutVarMi 'node') {
-        $nodeS = (& node -v 2>&1 | Out-String).Trim()
+        $eskiEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $nodeS = (& node -v 2>&1 | Out-String).Trim()
+        } catch {} finally {
+            $ErrorActionPreference = $eskiEap
+        }
         $major = 0; [void][int]::TryParse(($nodeS -replace '^v(\d+)\..*$', '$1'), [ref]$major)
         if ($major -ge 16) { $nodeOk = $true; Basari ("  [OK] Node.js: " + $nodeS) }
         else { Uyari ("  [!] Node.js eski: " + $nodeS + ' (16+ gerekli)') }
     } else { Uyari '  [!] Node.js yok (otomatik kurulacak)' }
 
     $npmOk = KomutVarMi 'npm'
-    if ($npmOk) { Basari ('  [OK] npm: ' + (& npm -v 2>&1 | Out-String).Trim()) } else { Uyari '  [!] npm yok' }
+    if ($npmOk) {
+        $npmVer = ''
+        $eskiEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $npmVer = (& npm -v 2>&1 | Out-String).Trim()
+        } catch {} finally {
+            $ErrorActionPreference = $eskiEap
+        }
+        Basari ('  [OK] npm: ' + $npmVer)
+    } else { Uyari '  [!] npm yok' }
 
     $kaynakOk = $true
     foreach ($f in @('Code.gs', 'Kuzgun_Iletisim_CRM.html', 'appsscript.json')) {
@@ -143,8 +163,9 @@ function Asama2_Gereksinim {
     }
 
     $yerelClasp = Join-Path (Join-Path $Proje 'node_modules\.bin') 'clasp.cmd'
+    $aracClasp = Join-Path (Join-Path (Join-Path $Ana 'araclar') 'node_modules\.bin') 'clasp.cmd'
     if (KomutVarMi 'clasp') { Basari '  [OK] clasp: sistemde kurulu' }
-    elseif (Test-Path $yerelClasp) { Basari '  [OK] clasp: onceki kurulumdan (proje ici)' }
+    elseif ((Test-Path $yerelClasp) -or (Test-Path $aracClasp)) { Basari '  [OK] clasp: onceki kurulumdan (hazir)' }
     else { Uyari '  [ ] clasp: otomatik kurulacak (proje klasorune)' }
 
     return [pscustomobject]@{ Internet = $net; Node = $nodeOk; Npm = $npmOk; Kaynak = $kaynakOk }
@@ -153,6 +174,8 @@ function Asama2_Gereksinim {
 function DosyalariHazirla {
     param([string]$erisim)
     if (-not (Test-Path $Proje)) { New-Item -ItemType Directory -Path $Proje -Force | Out-Null }
+    $strayJs = Join-Path $Proje 'Code.js'
+    if (Test-Path $strayJs) { Remove-Item $strayJs -Force -ErrorAction SilentlyContinue }
     Copy-Item (Join-Path $Kaynak 'Code.gs') (Join-Path $Proje 'Code.gs') -Force
 
     $htmlContent = Get-Content (Join-Path $Kaynak 'Kuzgun_Iletisim_CRM.html') -Raw -Encoding UTF8
@@ -175,6 +198,19 @@ function DosyalariHazirla {
     $m = Get-Content (Join-Path $Proje 'appsscript.json') -Raw | ConvertFrom-Json
     $m.webapp.access = $erisim
     ConvertTo-Json -InputObject $m -Depth 10 | Set-Content (Join-Path $Proje 'appsscript.json') -Encoding UTF8
+
+    $claspIgnore = "**/**`r`n!Code.gs`r`n!index.html`r`n!appsscript.json`r`n"
+    [System.IO.File]::WriteAllText((Join-Path $Proje '.claspignore'), $claspIgnore, (New-Object System.Text.UTF8Encoding($false)))
+
+    $claspJsonP = Join-Path $Proje '.clasp.json'
+    if (Test-Path $claspJsonP) {
+        try {
+            $cObj = Get-Content $claspJsonP -Raw | ConvertFrom-Json
+            if ($cObj -and $cObj.scriptId) {
+                @{ scriptId = $cObj.scriptId; rootDir = '.'; scriptExtensions = @('.gs', '.js'); htmlExtensions = @('.html'); jsonExtensions = @('.json') } | ConvertTo-Json | Set-Content $claspJsonP -Encoding UTF8
+            }
+        } catch {}
+    }
     Basari ('  [OK] Hazir: ' + $Proje + ' (erisim: ' + $erisim + ')')
 }
 
@@ -552,15 +588,10 @@ function EskiDosyalariTara {
             [void]$adayDizinler.Add($d)
             if ($d -match '(?i)\\(ozi|kuzgun(-crm)?|KuzgunCRM)$') {
                 try {
-                    Get-ChildItem -LiteralPath $d -Directory -ErrorAction SilentlyContinue | Where-Object {
-                        $_.Name -notmatch '(?i)^(node_modules|\.git|__pycache__|venv|\.venv|araclar)$'
+                    Get-ChildItem -LiteralPath $d -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object {
+                        $_.FullName -notmatch '(?i)[\\/](node_modules|\.git|__pycache__|venv|\.venv|araclar|proje|kaynak)([\\/]|$)'
                     } | ForEach-Object {
                         if (-not $adayDizinler.Contains($_.FullName)) { [void]$adayDizinler.Add($_.FullName) }
-                        Get-ChildItem -LiteralPath $_.FullName -Directory -ErrorAction SilentlyContinue | Where-Object {
-                            $_.Name -notmatch '(?i)^(node_modules|\.git|__pycache__|venv|\.venv|araclar)$'
-                        } | ForEach-Object {
-                            if (-not $adayDizinler.Contains($_.FullName)) { [void]$adayDizinler.Add($_.FullName) }
-                        }
                     }
                 } catch {}
             }
@@ -575,7 +606,7 @@ function EskiDosyalariTara {
         # Masaustundeki kuzgun veya ozi klasorleri
         try {
             Get-ChildItem -LiteralPath $desk -Directory -ErrorAction SilentlyContinue | Where-Object {
-                $_.Name -match '(?i)kuzgun|ozi|teknik|servis'
+                $_.Name -match '(?i)kuzgun|ozi|teknik|servis|crm|yedek'
             } | ForEach-Object {
                 if (-not $adayDizinler.Contains($_.FullName)) { [void]$adayDizinler.Add($_.FullName) }
             }
@@ -606,15 +637,11 @@ function EskiDosyalariTara {
     # 1. JSON dosyalarini tara (tum zarf formatlarini cozer: array, .devices, .data, .records, .items, .backup.devices, tek cihaz)
     foreach ($d in $adayDizinler) {
         try {
-            $isSharedDir = [bool]($d -match '(?i)[\\/](downloads|belgeler|documents|desktop|masa[u\u00FC]st[u\u00FC])$' -or $d -ieq $env:USERPROFILE -or $d -ieq [Environment]::GetFolderPath('CommonDesktopDirectory'))
-            $isExeOrKuzgunDir = [bool](($d -ieq $ExeDir -and -not $isSharedDir) -or $d -match '(?i)kuzgun|ozi')
             $jsonFiles = Get-ChildItem -LiteralPath $d -File -ErrorAction SilentlyContinue | Where-Object {
                 if ($_.Extension -ine '.json') { return $false }
-                if ($_.Name -match '(?i)^(package(-lock)?|appsscript|tsconfig|launch)\.json$') { return $false }
-                if ($_.Length -gt 20MB) { return $false }
-                if ($_.Name -match '(?i)(kuzgun|device|cihaz|musteri|backup|yedek|data|crm|export|servis|tamir|\d{4}-\d{2}-\d{2})') { return $true }
-                if ($isExeOrKuzgunDir) { return $true }
-                return $false
+                if ($_.Name -match '(?i)^(package(-lock)?|appsscript|tsconfig|launch|kurulum|\.clasp|settings|extensions|composer|manifest)\.json$') { return $false }
+                if ($_.Length -gt 20MB -or $_.Length -lt 3) { return $false }
+                return $true
             }
             foreach ($jf in $jsonFiles) {
                 try {
@@ -632,6 +659,10 @@ function EskiDosyalariTara {
                             $arr = $parsed.records
                         } elseif ($parsed.items -is [System.Array]) {
                             $arr = $parsed.items
+                        } elseif ($parsed.kayitlar -is [System.Array]) {
+                            $arr = $parsed.kayitlar
+                        } elseif ($parsed.cihazlar -is [System.Array]) {
+                            $arr = $parsed.cihazlar
                         } elseif ($parsed.backup -and $parsed.backup.devices -is [System.Array]) {
                             $arr = $parsed.backup.devices
                         } elseif ($parsed -and ($parsed.musteri_adi -or $parsed.customer_name -or $parsed.musteri -or $parsed.customer -or
@@ -653,58 +684,171 @@ function EskiDosyalariTara {
         } catch {}
     }
 
-    # 2. SQLite veritabanlarini tara (*.db, *.sqlite, *.sqlite3)
+    # 1b. Eski HTML dosyalarindaki gomulu EMBED_DEVICES dizilerini tara
+    $htmlAdaylar = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath (Join-Path $Ana 'Kuzgun_CRM.html')) {
+        [void]$htmlAdaylar.Add((Join-Path $Ana 'Kuzgun_CRM.html'))
+    }
     foreach ($d in $adayDizinler) {
         try {
-            $dbFiles = Get-ChildItem -LiteralPath $d -File -ErrorAction SilentlyContinue | Where-Object {
-                $_.Extension -match '(?i)^\.(db|sqlite|sqlite3)$'
+            Get-ChildItem -LiteralPath $d -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Extension -match '(?i)^\.html?$' -and $_.Length -lt 15MB -and $_.Name -match '(?i)kuzgun|crm|ozi|index'
+            } | ForEach-Object {
+                if (-not $htmlAdaylar.Contains($_.FullName)) { [void]$htmlAdaylar.Add($_.FullName) }
             }
-            foreach ($db in $dbFiles) {
-                if (KomutVarMi 'python' -or KomutVarMi 'python3') {
-                    $pyCmd = if (KomutVarMi 'python') { 'python' } else { 'python3' }
-                    $pyCode = 'import sqlite3, json, sys; conn = sqlite3.connect(sys.argv[1]); cur = conn.cursor(); cur.execute("SELECT name FROM sqlite_master WHERE type=''table'';"); tables = [r[0] for r in cur.fetchall() if not r[0].startswith("sqlite_")]; out = []; [out.extend([dict(zip([c[1] for c in cur.execute(''PRAGMA table_info("'' + t.replace(''"'', ''""'') + ''");'').fetchall()], [(v.decode(''utf-8'', errors=''replace'') if isinstance(v, bytes) else v) for v in row])) for row in cur.execute(''SELECT * FROM "'' + t.replace(''"'', ''""'') + ''";'').fetchall()]) for t in tables]; conn.close(); print(json.dumps(out, ensure_ascii=True, default=str))'
-                    try {
-                        $res = $pyCode | & $pyCmd - $db.FullName 2>&1 | Out-String
-                        if ($res -and $res.Trim().StartsWith('[')) {
-                            $items = $res | ConvertFrom-Json -ErrorAction SilentlyContinue
-                            $occIdx = 0
-                            foreach ($it in $items) {
-                                $norm = CihazNormalle $it $occIdx
-                                if ($norm) { [void]$bulunanlar.Add($norm) }
-                                $occIdx++
-                            }
-                        }
-                    } catch {}
+        } catch {}
+    }
+    foreach ($hf in $htmlAdaylar) {
+        try {
+            $hTxt = [System.IO.File]::ReadAllText($hf, [System.Text.Encoding]::UTF8)
+            if ($hTxt -match 'const\s+EMBED_DEVICES\s*=\s*(\[[\s\S]*?\]);') {
+                $embStr = $Matches[1].Trim()
+                if ($embStr.Length -gt 4 -and $embStr -ne '[]') {
+                    $embArr = $embStr | ConvertFrom-Json -ErrorAction SilentlyContinue
+                    $occIdx = 0
+                    foreach ($it in @($embArr)) {
+                        $norm = CihazNormalle $it $occIdx
+                        if ($norm) { [void]$bulunanlar.Add($norm) }
+                        $occIdx++
+                    }
                 }
             }
         } catch {}
     }
 
-    # 3. Chrome / Edge LevelDB localStorage taramasi
-    $levelDbDirs = @(
-        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data\Default\Local Storage\leveldb'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data\Default\Local Storage\leveldb')
+    # 2. SQLite veritabanlarini tara (*.db, *.db3, *.sqlite, *.sqlite3, *.s3db) - Node.js (node:sqlite) + Python yedekli
+    foreach ($d in $adayDizinler) {
+        try {
+            $dbFiles = Get-ChildItem -LiteralPath $d -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Extension -match '(?i)^\.(db|db3|sqlite|sqlite3|s3db)$'
+            }
+            foreach ($db in $dbFiles) {
+                $dbOkundu = $false
+                if (KomutVarMi 'node') {
+                    $nodeCode = 'try { const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync(process.argv[1]); const tables = db.prepare("SELECT name FROM sqlite_master WHERE type=\x27table\x27 AND name NOT LIKE \x27sqlite_%\x27").all().map(r => r.name); const out = []; for (const t of tables) { try { out.push(...db.prepare("SELECT * FROM \"" + t.replace(/"/g, "\"\"") + "\"").all()); } catch (e) {} } db.close(); process.stdout.write(JSON.stringify(out).replace(/[\u007f-\uffff]/g, c => "\\u" + ("0000" + c.charCodeAt(0).toString(16)).slice(-4))); } catch (e) {}'
+                    $eskiEap = $ErrorActionPreference
+                    $ErrorActionPreference = 'Continue'
+                    try {
+                        $resNode = (& node --no-warnings -e $nodeCode $db.FullName 2>$null | Out-String)
+                        if ($resNode -and $resNode.Trim().StartsWith('[')) {
+                            $itemsN = $resNode.Trim() | ConvertFrom-Json -ErrorAction SilentlyContinue
+                            $occIdx = 0
+                            foreach ($it in @($itemsN)) {
+                                $norm = CihazNormalle $it $occIdx
+                                if ($norm) { [void]$bulunanlar.Add($norm); $dbOkundu = $true }
+                                $occIdx++
+                            }
+                        }
+                    } catch {} finally {
+                        $ErrorActionPreference = $eskiEap
+                    }
+                }
+                if (-not $dbOkundu -and (KomutVarMi 'python' -or KomutVarMi 'python3')) {
+                    $pyCmd = if (KomutVarMi 'python') { 'python' } else { 'python3' }
+                    $pyCode = 'import sqlite3, json, sys; conn = sqlite3.connect(sys.argv[1]); cur = conn.cursor(); cur.execute("SELECT name FROM sqlite_master WHERE type=''table'';"); tables = [r[0] for r in cur.fetchall() if not r[0].startswith("sqlite_")]; out = []; [out.extend([dict(zip([c[1] for c in cur.execute(''PRAGMA table_info("'' + t.replace(''"'', ''""'') + ''");'').fetchall()], [(v.decode(''utf-8'', errors=''replace'') if isinstance(v, bytes) else v) for v in row])) for row in cur.execute(''SELECT * FROM "'' + t.replace(''"'', ''""'') + ''";'').fetchall()]) for t in tables]; conn.close(); print(json.dumps(out, ensure_ascii=True, default=str))'
+                    $eskiEap = $ErrorActionPreference
+                    $ErrorActionPreference = 'Continue'
+                    try {
+                        $res = ($pyCode | & $pyCmd - $db.FullName 2>&1 | Out-String)
+                        if ($res -and $res.Trim().StartsWith('[')) {
+                            $items = $res.Trim() | ConvertFrom-Json -ErrorAction SilentlyContinue
+                            $occIdx = 0
+                            foreach ($it in @($items)) {
+                                $norm = CihazNormalle $it $occIdx
+                                if ($norm) { [void]$bulunanlar.Add($norm) }
+                                $occIdx++
+                            }
+                        }
+                    } catch {} finally {
+                        $ErrorActionPreference = $eskiEap
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    # 3. Tarayici (Chrome / Edge / Brave / Opera) LevelDB localStorage taramasi (UTF-8 + UTF-16LE destekli)
+    $levelDbDirs = New-Object System.Collections.Generic.List[string]
+    $browserRoots = @(
+        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'),
+        (Join-Path $env:LOCALAPPDATA 'BraveSoftware\Brave-Browser\User Data')
     )
+    foreach ($br in $browserRoots) {
+        if ($br -and (Test-Path -LiteralPath $br)) {
+            $defLdb = Join-Path $br 'Default\Local Storage\leveldb'
+            if (Test-Path -LiteralPath $defLdb) { [void]$levelDbDirs.Add($defLdb) }
+            try {
+                Get-ChildItem -LiteralPath $br -Directory -ErrorAction SilentlyContinue | Where-Object {
+                    $_.Name -match '^(Default|Profile\s+\d+)$'
+                } | ForEach-Object {
+                    $pLdb = Join-Path $_.FullName 'Local Storage\leveldb'
+                    if ((Test-Path -LiteralPath $pLdb) -and -not $levelDbDirs.Contains($pLdb)) {
+                        [void]$levelDbDirs.Add($pLdb)
+                    }
+                }
+            } catch {}
+        }
+    }
     foreach ($ldbDir in $levelDbDirs) {
         if (Test-Path -LiteralPath $ldbDir) {
             try {
                 $ldbFiles = Get-ChildItem -LiteralPath $ldbDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '(?i)^\.(ldb|log)$' }
                 foreach ($lf in $ldbFiles) {
                     try {
-                        $txt = [System.IO.File]::ReadAllText($lf.FullName, [System.Text.Encoding]::GetEncoding(28591))
-                        if ($txt -match 'kuzgun_crm_data') {
-                            $rx = [regex]'\[\s*\{[^{}]*"(?:musteri_adi|customer_name|brand|marka|model)"[^{}]*\}\s*(?:,\s*\{[^{}]*\}\s*)*\]'
-                            $matches = $rx.Matches($txt)
-                            foreach ($m in $matches) {
-                                try {
-                                    $parsed = $m.Value | ConvertFrom-Json -ErrorAction SilentlyContinue
-                                    $occIdx = 0
-                                    foreach ($it in $parsed) {
-                                        $norm = CihazNormalle $it $occIdx
-                                        if ($norm) { [void]$bulunanlar.Add($norm) }
-                                        $occIdx++
+                        $bytes = [System.IO.File]::ReadAllBytes($lf.FullName)
+                        if ($bytes.Length -lt 10) { continue }
+                        $latinTxt = [System.Text.Encoding]::GetEncoding(28591).GetString($bytes)
+                        if ($latinTxt -notmatch '(?i)(kuzgun|musteri|customer_name|cihaz_marka)') { continue }
+
+                        $views = New-Object System.Collections.Generic.List[string]
+                        [void]$views.Add([System.Text.Encoding]::UTF8.GetString($bytes))
+                        $evenLen = $bytes.Length - ($bytes.Length % 2)
+                        if ($evenLen -gt 4) {
+                            [void]$views.Add([System.Text.Encoding]::Unicode.GetString($bytes, 0, $evenLen))
+                        }
+                        if ($bytes.Length -gt 5) {
+                            $oddLen = ($bytes.Length - 1) - (($bytes.Length - 1) % 2)
+                            if ($oddLen -gt 4) {
+                                [void]$views.Add([System.Text.Encoding]::Unicode.GetString($bytes, 1, $oddLen))
+                            }
+                        }
+
+                        foreach ($vTxt in $views) {
+                            $startMatches = [regex]::Matches($vTxt, '\[\s*\{')
+                            foreach ($sm in $startMatches) {
+                                $sIdx = $sm.Index
+                                $depth = 0
+                                $inStr = $false
+                                $esc = $false
+                                $eIdx = -1
+                                $maxScan = [Math]::Min($vTxt.Length, $sIdx + 2000000)
+                                for ($ci = $sIdx; $ci -lt $maxScan; $ci++) {
+                                    $ch = $vTxt[$ci]
+                                    if ($esc) { $esc = $false; continue }
+                                    if ($ch -eq [char]'\') { if ($inStr) { $esc = $true }; continue }
+                                    if ($ch -eq [char]'"') { $inStr = -not $inStr; continue }
+                                    if ($inStr) { continue }
+                                    if ($ch -eq [char]'[') { $depth++ }
+                                    elseif ($ch -eq [char]']') {
+                                        $depth--
+                                        if ($depth -eq 0) { $eIdx = $ci; break }
                                     }
-                                } catch {}
+                                }
+                                if ($eIdx -gt $sIdx) {
+                                    $candJson = $vTxt.Substring($sIdx, $eIdx - $sIdx + 1)
+                                    if ($candJson -match '(?i)"(musteri_adi|customer_name|brand|marka|model|cihaz_marka|imei|seri_no)"') {
+                                        try {
+                                            $parsed = $candJson | ConvertFrom-Json -ErrorAction SilentlyContinue
+                                            $occIdx = 0
+                                            foreach ($it in @($parsed)) {
+                                                $norm = CihazNormalle $it $occIdx
+                                                if ($norm) { [void]$bulunanlar.Add($norm) }
+                                                $occIdx++
+                                            }
+                                        } catch {}
+                                    }
+                                }
                             }
                         }
                     } catch {}
@@ -897,6 +1041,8 @@ function OncekiKurulumBul {
 function ClaspYoluBul {
     $yerel = Join-Path (Join-Path $Proje 'node_modules\.bin') 'clasp.cmd'
     if (Test-Path $yerel) { return $yerel }
+    $aracYol = Join-Path (Join-Path (Join-Path $Ana 'araclar') 'node_modules\.bin') 'clasp.cmd'
+    if (Test-Path $aracYol) { return $aracYol }
     if (KomutVarMi 'clasp') { return 'clasp' }
     return $null
 }
@@ -906,10 +1052,13 @@ function Clasp-Cagir {
     if (-not $yol) { throw 'clasp bulunamadi' }
     if (-not $Sessiz) { Write-Host ('    > clasp ' + ($Argumanlar -join ' ')) -ForegroundColor DarkGray }
     Push-Location $Proje
+    $eskiEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        $cikti = & $yol @Argumanlar 2>&1 | Out-String
+        $cikti = (& $yol @Argumanlar 2>&1 | Out-String)
         $kod = $LASTEXITCODE
     } finally {
+        $ErrorActionPreference = $eskiEap
         Pop-Location
     }
     $script:ClaspLog += "`n$ clasp $($Argumanlar -join ' ')`n$cikti"
@@ -925,10 +1074,15 @@ function Asama_OtomatikKurulum {
     Adim 'Clasp (Google aracisi) kontrol ediliyor'
     if (-not (ClaspYoluBul)) {
         Bilgi '    Proje icine clasp kuruluyor (npm, ~30-60 sn)...'
+        if (-not (Test-Path $Proje)) { New-Item -ItemType Directory -Path $Proje -Force | Out-Null }
         Push-Location $Proje
+        $eskiEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
         try {
-            & npm i @google/clasp --no-fund --no-audit 2>&1 | Select-Object -Last 3 | ForEach-Object { Write-Host ('    ' + $_) -ForegroundColor DarkGray }
-        } finally {
+            $npmCikti = (& npm i @google/clasp --no-fund --no-audit --loglevel=error 2>&1 | Out-String)
+            $script:ClaspLog += "`n$ npm i @google/clasp`n$npmCikti"
+        } catch {} finally {
+            $ErrorActionPreference = $eskiEap
             Pop-Location
         }
         if (-not (ClaspYoluBul)) { throw 'clasp kurulamadi (npm/node kontrol edin)' }
@@ -943,7 +1097,7 @@ function Asama_OtomatikKurulum {
         if ($out -match '[\w\.-]+@[\w\.-]+\.\w+') {
             $yetkili = $true
             $hesap = $Matches[0]
-        } elseif ($out -match '@') {
+        } elseif ($out -match '@' -and $out -notmatch 'not be logged in') {
             $yetkili = $true
         }
     } catch { $yetkili = $false }
@@ -981,7 +1135,7 @@ function Asama_OtomatikKurulum {
             foreach ($line in ($listOut -split "`r?`n")) {
                 if ($line -match 'Kuzgun' -and $line -match 'script\.google\.com/d/([a-zA-Z0-9_-]+)') {
                     $mevcutScriptId = $Matches[1]
-                    @{ scriptId = $mevcutScriptId; rootDir = '.' } | ConvertTo-Json | Set-Content $claspJsonYol -Encoding UTF8
+                    @{ scriptId = $mevcutScriptId; rootDir = '.'; scriptExtensions = @('.gs', '.js'); htmlExtensions = @('.html'); jsonExtensions = @('.json') } | ConvertTo-Json | Set-Content $claspJsonYol -Encoding UTF8
                     $cikarilmis = $true
                     Basari ('    [OK] Buluttaki mevcut Kuzgun CRM projesi bulundu ve baglandi (ID: ' + $mevcutScriptId + ')')
                     break
@@ -991,7 +1145,8 @@ function Asama_OtomatikKurulum {
     }
 
     # Projeyi olustur veya kodu yukle (Apps Script API kapaliysa otomatik algilayip ac)
-    for ($apiDeneme = 1; $apiDeneme -le 2; $apiDeneme++) {
+    $apiSayfaAcildi = $false
+    for ($apiDeneme = 1; $apiDeneme -le 6; $apiDeneme++) {
         try {
             if (-not $cikarilmis) {
                 Adim 'Google Bulutta yeni Apps Script projesi olusturuluyor'
@@ -1004,18 +1159,28 @@ function Asama_OtomatikKurulum {
                 Basari '    [OK] Proje olusturuldu'
             }
 
+            # create-script komutu clasp.files.pull() calistirip Code.js ve bos appsscript.json indirdigi icin dosyalari yeniden hazirla
+            DosyalariHazirla -erisim $erisim
+
             Adim 'Guncel kodlar buluta yukleniyor (push)'
             $null = Clasp-Cagir -Argumanlar @('push', '--force')
             Basari '    [OK] Code.gs + index.html + manifest basariyla yuklendi'
             break
         } catch {
             $hataMesaj = $_.Exception.Message
-            if ($apiDeneme -eq 1 -and ($hataMesaj -match 'User has not enabled the Apps Script API' -or $hataMesaj -match 'script\.google\.com/home/usersettings' -or $hataMesaj -match 'API')) {
-                Uyari '    [!] Google Apps Script API henuz acik degil. Ayar sayfasi aciliyor...'
-                Start-Process 'https://script.google.com/home/usersettings'
-                if ($Etkilesimli) { $cevapApi = Read-Host '    Acilan sayfada "Google Apps Script API" anahtarini ACIK yapip Enter''a basin ([C] Cikis)' } else { Uyari '    [!] Tarayicida acilan sayfadan Google Apps Script API anahtarini ACIK yapin (15 sn bekleniyor)...'; Start-Sleep -Seconds 15; $cevapApi = '' }
-                if ($cevapApi -match '^[Cc\u00E7\u00C7]$' -or $cevapApi -eq [string][char]0x00E7 -or $cevapApi -eq [string][char]0x00C7) { exit 0 }
-                Start-Sleep -Seconds 2
+            if ($apiDeneme -lt 6 -and ($hataMesaj -match 'User has not enabled the Apps Script API' -or $hataMesaj -match 'script\.google\.com/home/usersettings' -or $hataMesaj -match 'Apps Script API')) {
+                if (-not $apiSayfaAcildi) {
+                    Uyari '    [!] Google Apps Script API henuz acik degil. Ayar sayfasi aciliyor...'
+                    try { Start-Process 'https://script.google.com/home/usersettings' } catch {}
+                    $apiSayfaAcildi = $true
+                }
+                if ($Etkilesimli) {
+                    $cevapApi = Read-Host '    Acilan sayfada "Google Apps Script API" anahtarini ACIK yapip Enter''a basin ([C] Cikis)'
+                    if ($cevapApi -match '^[Cc\u00E7\u00C7]$' -or $cevapApi -eq [string][char]0x00E7 -or $cevapApi -eq [string][char]0x00C7) { exit 0 }
+                } else {
+                    Uyari ('    [!] Tarayicida acilan sayfadan "Google Apps Script API" anahtarini ACIK yapin (kontrol ' + $apiDeneme + '/5, 10 sn bekleniyor)...')
+                    Start-Sleep -Seconds 10
+                }
             } elseif ($cikarilmis -and $apiDeneme -eq 1) {
                 # Eski scriptId gecersiz veya silinmis olabilir; sifirdan olusturmayi dene
                 Uyari '    [!] Eski proje kimligine erisilemedi, yeni proje olusturuluyor...'
@@ -1036,7 +1201,7 @@ function Asama_OtomatikKurulum {
     # Eger deploymentId biliniyorsa veya bulutta mevcut bir yayin varsa onu bul
     if (-not $deploymentId) {
         try {
-            $depListOut = Clasp-Cagir -Argumanlar @('list-deployments', '--json') -Sessiz
+            $depListOut = Clasp-Cagir -Argumanlar @('--json', 'list-deployments') -Sessiz
             $depMatches = [regex]::Matches($depListOut, '"deploymentId"\s*:\s*"([^"]+)"')
             foreach ($m in $depMatches) {
                 $cand = $m.Groups[1].Value
@@ -1059,15 +1224,18 @@ function Asama_OtomatikKurulum {
     $yayinTamam = $false
 
     if ($deploymentId) {
-        # Hem yeni clasp (create-deployment -i) hem eski clasp (deploy -i) dene
+        try {
+            $cikti = Clasp-Cagir -Argumanlar @('update-deployment', $deploymentId, '-d', $aciklama, '--json') -Sessiz
+            $yayinTamam = $true
+        } catch {}
         foreach ($komut in @('create-deployment', 'deploy')) {
             if ($yayinTamam) { break }
             try {
-                $cikti = Clasp-Cagir -Argumanlar @($komut, '-i', $deploymentId, '-d', $aciklama, '--json') -Sessiz
+                $cikti = Clasp-Cagir -Argumanlar @($komut, '-i', $deploymentId, '-d', $aciklama) -Sessiz
                 $yayinTamam = $true
             } catch {
                 try {
-                    $cikti = Clasp-Cagir -Argumanlar @($komut, '-i', $deploymentId, '-d', $aciklama) -Sessiz
+                    $cikti = Clasp-Cagir -Argumanlar @($komut, '-i', $deploymentId, '-d', $aciklama, '--json') -Sessiz
                     $yayinTamam = $true
                 } catch {}
             }
@@ -1078,11 +1246,11 @@ function Asama_OtomatikKurulum {
         foreach ($komut in @('create-deployment', 'deploy')) {
             if ($yayinTamam) { break }
             try {
-                $cikti = Clasp-Cagir -Argumanlar @($komut, '-d', $aciklama, '--json') -Sessiz
+                $cikti = Clasp-Cagir -Argumanlar @($komut, '-d', $aciklama) -Sessiz
                 $yayinTamam = $true
             } catch {
                 try {
-                    $cikti = Clasp-Cagir -Argumanlar @($komut, '-d', $aciklama) -Sessiz
+                    $cikti = Clasp-Cagir -Argumanlar @($komut, '-d', $aciklama, '--json') -Sessiz
                     $yayinTamam = $true
                 } catch {}
             }
@@ -1096,7 +1264,7 @@ function Asama_OtomatikKurulum {
             if ($dep.deploymentId) { $deploymentId = $dep.deploymentId }
         }
     } catch {}
-    if (-not $deploymentId -and $cikti -match 'Deployed\s+([A-Za-z0-9_-]+)\s+@') {
+    if (-not $deploymentId -and $cikti -match '(?:Deployed|Redeployed)\s+([A-Za-z0-9_-]+)\s+@') {
         $deploymentId = $Matches[1]
     }
 
@@ -1135,12 +1303,14 @@ function Asama4_Tamam {
     param([hashtable]$sonuc, [bool]$guncellendi = $false)
     if ($guncellendi) {
         Baslik ('ISLEM TAMAMLANDI - KURULUM GUNCELLENDI (' + $Surdur + ')')
-        Basari '  Mevcut CRM kurulumunuz basariyla guncellendi ve Google hesabinizla eslendi:'
+        Basari '  Mevcut CRM kurulumunuz basariyla guncellendi:'
     } else {
         Baslik ('ISLEM TAMAMLANDI - YENI KURULUM HAZIR (' + $Surdur + ')')
-        Basari '  CRM buluta kuruldu ve Google hesabinizla eslendi:'
+        Basari '  CRM basariyla kuruldu ve kullanima hazir:'
     }
-    Satir White ('    ADRES         : ' + $sonuc.url)
+    if ($sonuc.url) {
+        Satir White ('    ADRES         : ' + $sonuc.url)
+    }
     if ($sonuc.account) {
         Satir White ('    GOOGLE HESABI : ' + $sonuc.account + ' (Otomatik Eslendi)')
     }
@@ -1149,7 +1319,7 @@ function Asama4_Tamam {
         Satir Green ("    TASINAN VERI  : $($sonuc.migratedCount) cihaz kaydi yeni surume basariyla aktarildi")
     }
     Write-Host ''
-    Satir Gray '  - CRM simdi tarayicinizda otomatik aciliyor ve Google hesabinizla esleniyor.'
+    Satir Gray '  - CRM simdi otomatik aciliyor.'
     Satir Gray '  - Masaustune "Kuzgun CRM" kisayolu eklendi / guncellendi (eski surum dosyalari yedeklenip kaldirildi).'
     Satir Gray '  - Tekrar guncellemek icin KuzgunCRM_Kurulum.exe dosyasina cift tiklamaniz yeterlidir.'
     Write-Host ''
@@ -1158,13 +1328,15 @@ function Asama4_Tamam {
         Set-Content -Path $log -Value $script:ClaspLog -Encoding UTF8
         Satir Gray ('  Kurulum logu: ' + $log)
     }
-    try { Start-Process $sonuc.url } catch {}
+    if (-not $Sessiz -and $sonuc.url) {
+        try { Start-Process $sonuc.url } catch {}
+    }
     Write-Host ''
-    Satir Green '  Otomatik islem basariyla tamamlandi! (3 saniye icinde kapaniyor...)'
+    Satir Green '  Otomatik islem basariyla tamamlandi!'
     if ($Etkilesimli) {
         $null = Read-Host '  Pencereyi kapatmak icin Enter tusuna basin'
     } else {
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 1
     }
 }
 
@@ -1273,26 +1445,6 @@ function OtomatikCalistir {
     }
 
     $durum = Asama2_Gereksinim
-    if (-not $durum.Internet) {
-        Hata '  Internet baglantisi yok! Lutfen internetinizi kontrol edip tekrar deneyin.'
-        exit 1
-    }
-    if (-not $durum.Node) {
-        $kuruldu = NodeOtomatikKur
-        if (-not $kuruldu -and -not (KomutVarMi 'node')) {
-            Uyari '  Node.js otomatik kurulamadi. Indirme sayfasi aciliyor...'
-            Start-Process 'https://nodejs.org/'
-            if ($Etkilesimli) { $cevapNode = Read-Host '  Node.js kurduktan sonra Enter''a basin  [C] Cikis' } else { $cevapNode = '' }
-            if ($cevapNode -match '^[Cc\u00E7\u00C7]$' -or $cevapNode -eq [string][char]0x00E7 -or $cevapNode -eq [string][char]0x00C7) { exit 0 }
-            PathYenile
-            if (-not (KomutVarMi 'node')) {
-                Hata '  Node.js hala bulunamadi. Manuel kilavuza geciliyor.'
-                ManuelRehber
-                exit 1
-            }
-        }
-    }
-
     $erisim = 'ANYONE_ANONYMOUS'
     if ($onceki -and $onceki.Erisim -and $onceki.Erisim -ne 'ANYONE') { $erisim = $onceki.Erisim }
 
@@ -1302,30 +1454,105 @@ function OtomatikCalistir {
     # 2. Dosyalari hazirla (migrated veriler index.html icine de enjekte edilir)
     DosyalariHazirla -erisim $erisim
 
-    # 3. Bulut adimi basarisiz olsa bile masaustu kisayolu olussun (adres ve veriler gomulur)
-    KisayolOlustur -url $(if ($onceki -and $onceki.Url) { $onceki.Url } else { '' }) -cihazlar $migrated
+    # 3. Bulut adimi basarisiz olsa bile masaustu kisayolu ve yerel uygulama olussun (adres ve veriler gomulur)
+    $varsayilanUrl = if ($onceki -and $onceki.Url) { $onceki.Url } else { '' }
+    KisayolOlustur -url $varsayilanUrl -cihazlar $migrated
 
-    # 4. Bulut projesini ve yayinini olustur / guncelle
-    $sonuc = Asama_OtomatikKurulum -erisim $erisim -onceki $onceki
-
-    # 5. Konfigurasyonu yaz
-    ConfigYaz @{
-        url = $sonuc.url
-        deploymentId = $sonuc.deploymentId
-        scriptId = $sonuc.scriptId
-        googleAccount = $sonuc.account
-        erisim = $erisim
-        guncelleme = (Get-Date -Format o)
-        surum = $Surdur
-        migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
+    if (-not $durum.Internet) {
+        Uyari '  [!] Internet baglantisi yok; CRM yerel modda kuruldu ve masaustu kisayolu hazirlandi.'
+        $yerelSonuc = @{
+            url = (Join-Path $Ana 'Kuzgun_CRM.html')
+            deploymentId = $(if ($onceki -and $onceki.DeploymentId) { $onceki.DeploymentId } else { '' })
+            scriptId = $(if ($onceki -and $onceki.ScriptId) { $onceki.ScriptId } else { '' })
+            account = ''
+            migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
+        }
+        ConfigYaz @{
+            url = $varsayilanUrl
+            deploymentId = $yerelSonuc.deploymentId
+            scriptId = $yerelSonuc.scriptId
+            googleAccount = ''
+            erisim = $erisim
+            guncelleme = (Get-Date -Format o)
+            surum = $Surdur
+            migratedCount = $yerelSonuc.migratedCount
+        }
+        Asama4_Tamam -sonuc $yerelSonuc -guncellendi $guncellemeMi
+        return
     }
 
-    # 6. Masaustu kisayolunu dogrulanmis yeni URL ve gomulu verilerle guncelle
-    KisayolOlustur -url $sonuc.url -cihazlar $migrated
+    if (-not $durum.Node) {
+        $kuruldu = NodeOtomatikKur
+        if (-not $kuruldu -and -not (KomutVarMi 'node')) {
+            Uyari '  [!] Node.js bulunamadi; CRM yerel modda kuruldu ve masaustu kisayolu hazirlandi.'
+            $yerelSonuc = @{
+                url = (Join-Path $Ana 'Kuzgun_CRM.html')
+                deploymentId = $(if ($onceki -and $onceki.DeploymentId) { $onceki.DeploymentId } else { '' })
+                scriptId = $(if ($onceki -and $onceki.ScriptId) { $onceki.ScriptId } else { '' })
+                account = ''
+                migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
+            }
+            ConfigYaz @{
+                url = $varsayilanUrl
+                deploymentId = $yerelSonuc.deploymentId
+                scriptId = $yerelSonuc.scriptId
+                googleAccount = ''
+                erisim = $erisim
+                guncelleme = (Get-Date -Format o)
+                surum = $Surdur
+                migratedCount = $yerelSonuc.migratedCount
+            }
+            Asama4_Tamam -sonuc $yerelSonuc -guncellendi $guncellemeMi
+            return
+        }
+    }
 
-    # 7. Islemi tamamla
-    $sonuc['migratedCount'] = $(if ($migrated) { @($migrated).Count } else { 0 })
-    Asama4_Tamam -sonuc $sonuc -guncellendi $guncellemeMi
+    # 4. Bulut projesini ve yayinini olustur / guncelle
+    try {
+        $sonuc = Asama_OtomatikKurulum -erisim $erisim -onceki $onceki
+
+        # 5. Konfigurasyonu yaz
+        ConfigYaz @{
+            url = $sonuc.url
+            deploymentId = $sonuc.deploymentId
+            scriptId = $sonuc.scriptId
+            googleAccount = $sonuc.account
+            erisim = $erisim
+            guncelleme = (Get-Date -Format o)
+            surum = $Surdur
+            migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
+        }
+
+        # 6. Masaustu kisayolunu dogrulanmis yeni URL ve gomulu verilerle guncelle
+        KisayolOlustur -url $sonuc.url -cihazlar $migrated
+
+        # 7. Islemi tamamla
+        $sonuc['migratedCount'] = $(if ($migrated) { @($migrated).Count } else { 0 })
+        Asama4_Tamam -sonuc $sonuc -guncellendi $guncellemeMi
+    } catch {
+        Uyari ('  [!] Bulut senkronizasyonu su an tamamlanamadi: ' + $_.Exception.Message)
+        Basari '  [OK] Merak etmeyin! Kuzgun CRM YEREL MODDA tam fonksiyonlu olarak kuruldu ve masaustune eklendi.'
+        Bilgi '       Bulut eslemesini daha sonra yapmak isterseniz https://script.google.com/home/usersettings adresinden'
+        Bilgi '       Google Apps Script API anahtarini ACIK yapip bu kurulum sihirbazini tekrar calistirabilirsiniz.'
+        $yerelSonuc = @{
+            url = $(if ($varsayilanUrl) { $varsayilanUrl } else { (Join-Path $Ana 'Kuzgun_CRM.html') })
+            deploymentId = $(if ($onceki -and $onceki.DeploymentId) { $onceki.DeploymentId } else { '' })
+            scriptId = $(if ($onceki -and $onceki.ScriptId) { $onceki.ScriptId } else { '' })
+            account = ''
+            migratedCount = $(if ($migrated) { @($migrated).Count } else { 0 })
+        }
+        ConfigYaz @{
+            url = $varsayilanUrl
+            deploymentId = $yerelSonuc.deploymentId
+            scriptId = $yerelSonuc.scriptId
+            googleAccount = ''
+            erisim = $erisim
+            guncelleme = (Get-Date -Format o)
+            surum = $Surdur
+            migratedCount = $yerelSonuc.migratedCount
+        }
+        Asama4_Tamam -sonuc $yerelSonuc -guncellendi $guncellemeMi
+    }
 }
 
 function ManuelRehber {

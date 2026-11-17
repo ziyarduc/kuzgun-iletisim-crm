@@ -270,6 +270,31 @@ const eskiTaraPos = ps1Text.indexOf('function EskiDosyalariTara {');
 ok(masaDefPos !== -1 && eskiTaraPos !== -1 && masaDefPos < eskiTaraPos,
     'function MasaustuKlasorleri is defined before function EskiDosyalariTara');
 
+// Check that every native command invocation with 2>&1 or 2>$null is protected by $ErrorActionPreference = 'Continue'
+const unprotectedNativeRedirects = [];
+lines.forEach((line, idx) => {
+    if (/&\s+\S+.*2>(?:&1|\$null)/.test(line)) {
+        const prevWindow = lines.slice(Math.max(0, idx - 6), idx).join('\n');
+        if (!prevWindow.includes("$ErrorActionPreference = 'Continue'")) {
+            unprotectedNativeRedirects.push({ line: idx + 1, text: line.trim() });
+        }
+    }
+});
+ok(unprotectedNativeRedirects.length === 0,
+    'All native command stderr redirects (2>&1 / 2>$null) are protected by $ErrorActionPreference = "Continue" (unprotected: ' + JSON.stringify(unprotectedNativeRedirects) + ')');
+
+// Check that DosyalariHazirla is called after create-script and before push --force, and writes .claspignore + removes Code.js
+const createScriptPos = ps1Text.indexOf("'create-script'");
+const pushForcePos = ps1Text.indexOf("'push', '--force'");
+const dosyalariAfterCreatePos = ps1Text.indexOf('DosyalariHazirla -erisim $erisim', createScriptPos);
+ok(createScriptPos !== -1 && pushForcePos !== -1 && dosyalariAfterCreatePos > createScriptPos && dosyalariAfterCreatePos < pushForcePos,
+    'DosyalariHazirla is called between clasp create-script and clasp push --force to prevent Code.js FILE_CONFLICT');
+ok(ps1Text.includes('.claspignore') && ps1Text.includes("Join-Path $Proje 'Code.js'"),
+    'DosyalariHazirla writes .claspignore and cleans stray Code.js');
+ok(ps1Text.includes('node:sqlite') && ps1Text.includes('[System.Text.Encoding]::Unicode.GetString'),
+    'EskiDosyalariTara supports built-in Node.js node:sqlite and UTF-16LE Chromium LevelDB extraction');
+
+
 // =========================================================================
 // 3. Real Code.gs & Kuzgun_Iletisim_CRM.html Execution via Node vm Module
 // =========================================================================
