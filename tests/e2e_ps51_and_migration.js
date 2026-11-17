@@ -212,6 +212,48 @@ const getRandomInId = lines.filter(l => l.includes('Get-Random') && !l.includes(
 ok(getRandomInId.length === 0,
     'Zero Get-Random calls in deterministic ID generation or migration pipelines');
 
+// Check no $var: drive-qualified parser traps inside expandable double-quoted strings
+const validScopes = new Set(['env', 'script', 'global', 'local', 'private', 'using', 'variable']);
+const invalidDriveRefs = [];
+{
+    let ii = 0, nn = ps1Text.length, sq = false, dq = false, cm = false, ln = 1, dqBuf = '', dqLn = 1;
+    while (ii < nn) {
+        const ch = ps1Text[ii], nxt = ps1Text[ii + 1] || '', prv = ps1Text[ii - 1] || '';
+        if (ch === '\n') { ln++; cm = false; ii++; continue; }
+        if (cm) { ii++; continue; }
+        if (!sq && !dq && ch === '#') { cm = true; ii++; continue; }
+        if (!sq && !dq && ch === '@' && nxt === "'") {
+            const endHs = ps1Text.indexOf("\n'@", ii);
+            if (endHs !== -1) { ln += ps1Text.slice(ii, endHs + 3).split('\n').length - 1; ii = endHs + 3; continue; }
+        }
+        if (!dq && ch === "'") {
+            if (!sq) sq = true;
+            else if (nxt === "'") ii++;
+            else sq = false;
+            ii++; continue;
+        }
+        if (!sq && ch === '"') {
+            if (!dq) { dq = true; dqBuf = ''; dqLn = ln; }
+            else if (prv === '`') dqBuf += ch;
+            else if (nxt === '"') { dqBuf += ch; ii++; }
+            else {
+                for (const m of dqBuf.matchAll(/(?<!`)\$([A-Za-z_][A-Za-z0-9_]*):(.?)/g)) {
+                    const vr = m[1].toLowerCase(), af = m[2];
+                    if (!validScopes.has(vr) || !/[A-Za-z0-9_]/.test(af)) {
+                        invalidDriveRefs.push({ line: dqLn, ref: '$' + m[1] + ':' + af });
+                    }
+                }
+                dq = false;
+            }
+            ii++; continue;
+        }
+        if (dq) dqBuf += ch;
+        ii++;
+    }
+}
+ok(invalidDriveRefs.length === 0,
+    'Zero InvalidVariableReferenceWithDrive ($var:) patterns in expandable strings (found: ' + JSON.stringify(invalidDriveRefs) + ')');
+
 // Check byte-for-byte embedded resource match in KuzgunCRM_Kurulum.exe
 const exePath = path.join(ROOT, 'KuzgunCRM_Kurulum.exe');
 const exeBuf = fs.readFileSync(exePath);

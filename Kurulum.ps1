@@ -326,8 +326,8 @@ function CihazNormalle {
     }
     if ($sifreVal -and $notesVal -notlike "*$sifreVal*") {
         $sifreEtiket = [string][char]0x015E + 'ifre'
-        if ($notesVal) { $notesVal = "$notesVal ($sifreEtiket: $sifreVal)" }
-        else { $notesVal = "$sifreEtiket: $sifreVal" }
+        if ($notesVal) { $notesVal = ($notesVal + ' (' + $sifreEtiket + ': ' + $sifreVal + ')') }
+        else { $notesVal = ($sifreEtiket + ': ' + $sifreVal) }
     }
 
     # price / fiyat / ucret / cost / amount / tutar
@@ -440,7 +440,7 @@ function CanliSunucuVeriCek {
     foreach ($port in $portlar) {
         $portBitti = $false
         foreach ($ep in $endpoints) {
-            $url = "http://127.0.0.1:$port$ep"
+            $url = ("http://127.0.0.1:" + $port + $ep)
             try {
                 $req = [System.Net.WebRequest]::Create($url)
                 $req.Timeout = 1200
@@ -548,7 +548,23 @@ function EskiDosyalariTara {
         }
     }
     foreach ($d in $standartDizinler) {
-        if ($d -and (Test-Path -LiteralPath $d) -and -not $adayDizinler.Contains($d)) { [void]$adayDizinler.Add($d) }
+        if ($d -and (Test-Path -LiteralPath $d) -and -not $adayDizinler.Contains($d)) {
+            [void]$adayDizinler.Add($d)
+            if ($d -match '(?i)\\(ozi|kuzgun(-crm)?|KuzgunCRM)$') {
+                try {
+                    Get-ChildItem -LiteralPath $d -Directory -ErrorAction SilentlyContinue | Where-Object {
+                        $_.Name -notmatch '(?i)^(node_modules|\.git|__pycache__|venv|\.venv|araclar)$'
+                    } | ForEach-Object {
+                        if (-not $adayDizinler.Contains($_.FullName)) { [void]$adayDizinler.Add($_.FullName) }
+                        Get-ChildItem -LiteralPath $_.FullName -Directory -ErrorAction SilentlyContinue | Where-Object {
+                            $_.Name -notmatch '(?i)^(node_modules|\.git|__pycache__|venv|\.venv|araclar)$'
+                        } | ForEach-Object {
+                            if (-not $adayDizinler.Contains($_.FullName)) { [void]$adayDizinler.Add($_.FullName) }
+                        }
+                    }
+                } catch {}
+            }
+        }
     }
 
     # Masaustu klasorleri ve alt klasorleri
