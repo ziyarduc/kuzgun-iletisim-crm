@@ -18,11 +18,11 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("Kuzgun Iletisim CRM")]
-[assembly: AssemblyDescription("Standalone Masaustu Uygulamasi ve Kurulum Sihirbazi - Kuzgun Iletisim CRM v2.4.0")]
+[assembly: AssemblyDescription("Standalone Masaustu Uygulamasi ve Kurulum Sihirbazi - Kuzgun Iletisim CRM v2.4.1")]
 [assembly: AssemblyProduct("Kuzgun Iletisim CRM")]
 [assembly: AssemblyCompany("Kuzgun Iletisim")]
-[assembly: AssemblyVersion("2.4.0.0")]
-[assembly: AssemblyFileVersion("2.4.0.0")]
+[assembly: AssemblyVersion("2.4.1.0")]
+[assembly: AssemblyFileVersion("2.4.1.0")]
 [assembly: NeutralResourcesLanguage("tr-TR")]
 
 namespace KuzgunCrmSetup
@@ -445,7 +445,7 @@ namespace KuzgunCrmSetup
             catch {}
         }
 
-        private static byte[] ReadResource(Assembly asm, string name)
+        internal static byte[] ReadResource(Assembly asm, string name)
         {
             using (Stream s = asm.GetManifestResourceStream(name))
             {
@@ -642,6 +642,36 @@ namespace KuzgunCrmSetup
             }
         }
 
+        private static readonly Dictionary<string, byte[]> _assetCache = new Dictionary<string, byte[]>();
+        private static readonly object _assetLock = new object();
+
+        private static byte[] GetEmbeddedAsset(string rel)
+        {
+            if (string.IsNullOrEmpty(rel) || rel.IndexOf("..", StringComparison.Ordinal) >= 0) return null;
+            string key = rel.Replace('/', '.').Replace('\\', '.');
+            lock (_assetLock)
+            {
+                byte[] cached;
+                if (_assetCache.TryGetValue(key, out cached)) return cached;
+                byte[] data = null;
+                try { data = Program.ReadResource(Assembly.GetExecutingAssembly(), "asset." + key); } catch {}
+                if (data != null && data.Length == 0) data = null;
+                _assetCache[key] = data;
+                return data;
+            }
+        }
+
+        private static string AssetMime(string rel)
+        {
+            string r = rel.ToLowerInvariant();
+            if (r.EndsWith(".css")) return "text/css; charset=utf-8";
+            if (r.EndsWith(".js")) return "application/javascript; charset=utf-8";
+            if (r.EndsWith(".woff2")) return "font/woff2";
+            if (r.EndsWith(".woff")) return "font/woff";
+            if (r.EndsWith(".ttf")) return "font/ttf";
+            return "application/octet-stream";
+        }
+
         private static void HandleClient(object state)
         {
             TcpClient client = (TcpClient)state;
@@ -675,6 +705,23 @@ namespace KuzgunCrmSetup
                     {
                         string jsonResp = HandleApiRequest(body);
                         WriteHttpResponse(ns, "200 OK", "application/json; charset=utf-8", Encoding.UTF8.GetBytes(jsonResp));
+                        return;
+                    }
+
+                    if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string rel = path.Substring(8);
+                        int qi = rel.IndexOf('?');
+                        if (qi >= 0) rel = rel.Substring(0, qi);
+                        byte[] asset = GetEmbeddedAsset(rel);
+                        if (asset == null)
+                        {
+                            WriteHttpResponse(ns, "404 Not Found", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("404"));
+                        }
+                        else
+                        {
+                            WriteHttpResponse(ns, "200 OK", AssetMime(rel), asset);
+                        }
                         return;
                     }
 
@@ -1035,7 +1082,7 @@ namespace KuzgunCrmSetup
             res["activeUserEmail"] = acc;
             res["isStandalone"] = true;
             res["hasGoogleCloud"] = hasGoogleCloud;
-            res["version"] = "2.4.0";
+            res["version"] = "2.4.1";
             res["updated"] = maxUpdated;
             return res;
         }
@@ -1084,12 +1131,175 @@ namespace KuzgunCrmSetup
             return null;
         }
 
-        private static List<Dictionary<string, object>> LoadDevicesUnlocked()
+        // ---- Veritabani katmani: bellek onbellegi + aninda gunluk (journal) + 300ms debounce'lu atomik snapshot ----
+        private const int FLUSH_DELAY_MS = 300;
+        private const int JOURNAL_BULK_LIMIT = 100;
+        private static List<Dictionary<string, object>> _cache = null;
+        private static Dictionary<string, string> _cacheSer = null;
+        private static bool _snapshotDirty = false;
+        private static System.Threading.Timer _flushTimer = null;
+        private static bool _exitHooked = false;
+        internal static string LastRecoveryNote = null;
+
+        private static string JournalPath() { return GetDbFilePath() + ".journal"; }
+
+        private static string RecKey(Dictionary<string, object> d)
+        {
+            object v;
+            if (d != null && d.TryGetValue("id", out v) && v != null) return Convert.ToString(v, CultureInfo.InvariantCulture);
+            return "";
+        }
+
+        private static List<Dictionary<string, object>> CloneList(List<Dictionary<string, object>> src)
+        {
+            List<Dictionary<string, object>> copy = new List<Dictionary<string, object>>(src.Count);
+            for (int i = 0; i < src.Count; i++) copy.Add(new Dictionary<string, object>(src[i]));
+            return copy;
+        }
+
+        private static void IndexCache()
+        {
+            JavaScriptSerializer ser = CreateSerializer();
+            _cacheSer = new Dictionary<string, string>();
+            for (int i = 0; i < _cache.Count; i++) _cacheSer[RecKey(_cache[i])] = ser.Serialize(_cache[i]);
+        }
+
+        private static void HookExit()
+        {
+            if (_exitHooked) return;
+            _exitHooked = true;
+            try
+            {
+                AppDomain.CurrentDomain.ProcessExit += delegate { FlushDb(); };
+                Console.CancelKeyPress += delegate { FlushDb(); };
+            }
+            catch {}
+        }
+
+        internal static void FlushDb()
+        {
+            lock (_dbLock)
+            {
+                FlushUnlocked();
+            }
+        }
+
+        private static void FlushUnlocked()
+        {
+            if (_cache == null || !_snapshotDirty) return;
+            try
+            {
+                WriteSnapshotAtomic(_cache);
+                _snapshotDirty = false;
+                try { if (File.Exists(JournalPath())) File.Delete(JournalPath()); } catch {}
+            }
+            catch {}
+        }
+
+        private static void ScheduleFlush()
+        {
+            if (_flushTimer == null)
+            {
+                _flushTimer = new System.Threading.Timer(delegate { FlushDb(); }, null, FLUSH_DELAY_MS, Timeout.Infinite);
+            }
+            else
+            {
+                _flushTimer.Change(FLUSH_DELAY_MS, Timeout.Infinite);
+            }
+        }
+
+        private static List<Dictionary<string, object>> ReadBaseFromDisk()
         {
             string dbFile = GetDbFilePath();
-            JavaScriptSerializer ser = CreateSerializer();
+            try
+            {
+                return ParseDevicesFromJson(File.ReadAllText(dbFile, Encoding.UTF8));
+            }
+            catch {}
 
-            if (!File.Exists(dbFile))
+            try
+            {
+                string bak = dbFile + ".bak";
+                if (File.Exists(bak))
+                {
+                    List<Dictionary<string, object>> b = ParseDevicesFromJson(File.ReadAllText(bak, Encoding.UTF8));
+                    LastRecoveryNote = "veritabani.json bozuk: .bak dosyasindan kurtarildi";
+                    return b;
+                }
+            }
+            catch {}
+
+            try
+            {
+                string dir = Path.Combine(Program.GetCrmRootDir(), "yedekler");
+                if (Directory.Exists(dir))
+                {
+                    string[] files = Directory.GetFiles(dir, "*.json");
+                    Array.Sort(files, delegate(string x, string y) { return File.GetLastWriteTimeUtc(y).CompareTo(File.GetLastWriteTimeUtc(x)); });
+                    for (int i = 0; i < files.Length; i++)
+                    {
+                        try
+                        {
+                            List<Dictionary<string, object>> r = ParseDevicesFromJson(File.ReadAllText(files[i], Encoding.UTF8));
+                            LastRecoveryNote = "veritabani.json bozuk: en yeni yedekten kurtarildi (" + Path.GetFileName(files[i]) + ")";
+                            return r;
+                        }
+                        catch {}
+                    }
+                }
+            }
+            catch {}
+            return new List<Dictionary<string, object>>();
+        }
+
+        private static void ReplayJournal(List<Dictionary<string, object>> list)
+        {
+            string jp = JournalPath();
+            if (!File.Exists(jp)) return;
+            JavaScriptSerializer ser = CreateSerializer();
+            Dictionary<string, int> pos = new Dictionary<string, int>();
+            for (int i = 0; i < list.Count; i++) pos[RecKey(list[i])] = i;
+            string[] lines;
+            try { lines = File.ReadAllLines(jp, Encoding.UTF8); } catch { return; }
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string ln = lines[i];
+                if (ln.Length < 3) continue;
+                try
+                {
+                    char op = ln[0];
+                    string payload = ln.Substring(2);
+                    if (op == 'U')
+                    {
+                        Dictionary<string, object> rec = ser.Deserialize<Dictionary<string, object>>(payload);
+                        string k = RecKey(rec);
+                        int idx;
+                        if (pos.TryGetValue(k, out idx)) list[idx] = rec;
+                        else { pos[k] = list.Count; list.Add(rec); }
+                    }
+                    else if (op == 'D')
+                    {
+                        int idx;
+                        if (pos.TryGetValue(payload, out idx))
+                        {
+                            list.RemoveAt(idx);
+                            pos.Clear();
+                            for (int j = 0; j < list.Count; j++) pos[RecKey(list[j])] = j;
+                        }
+                    }
+                }
+                catch {}
+            }
+        }
+
+        private static List<Dictionary<string, object>> LoadDevicesUnlocked()
+        {
+            HookExit();
+            if (_cache != null) return CloneList(_cache);
+
+            string dbFile = GetDbFilePath();
+
+            if (!File.Exists(dbFile) && !File.Exists(dbFile + ".bak") && !File.Exists(JournalPath()))
             {
                 string migFile = Path.Combine(Program.GetCrmRootDir(), "migrated_devices.json");
                 if (File.Exists(migFile))
@@ -1100,36 +1310,88 @@ namespace KuzgunCrmSetup
                         if (migList.Count > 0)
                         {
                             SaveDevicesUnlocked(migList);
-                            return migList;
+                            return CloneList(_cache);
                         }
                     }
                     catch {}
                 }
 
-                List<Dictionary<string, object>> demo = CreateDemoDevices();
-                SaveDevicesUnlocked(demo);
-                return demo;
+                SaveDevicesUnlocked(CreateDemoDevices());
+                return CloneList(_cache);
             }
 
-            try
+            List<Dictionary<string, object>> loaded = ReadBaseFromDisk();
+            ReplayJournal(loaded);
+            _cache = loaded;
+            IndexCache();
+            if (File.Exists(JournalPath()))
             {
-                string raw = File.ReadAllText(dbFile, Encoding.UTF8);
-                return ParseDevicesFromJson(raw);
+                _snapshotDirty = true;
+                FlushUnlocked();
             }
-            catch
-            {
-                try
-                {
-                    string bak = dbFile + ".bak";
-                    if (File.Exists(bak))
-                        return ParseDevicesFromJson(File.ReadAllText(bak, Encoding.UTF8));
-                }
-                catch {}
-                return new List<Dictionary<string, object>>();
-            }
+            return CloneList(_cache);
         }
 
         private static void SaveDevicesUnlocked(List<Dictionary<string, object>> devices)
+        {
+            HookExit();
+            JavaScriptSerializer ser = CreateSerializer();
+            List<Dictionary<string, object>> next = CloneList(devices);
+
+            if (_cache == null || _cacheSer == null)
+            {
+                _cache = next;
+                IndexCache();
+                WriteSnapshotAtomic(_cache);
+                _snapshotDirty = false;
+                return;
+            }
+
+            // Fark hesapla: degisen/eklenen kayitlar (U) ve silinen kimlikler (D)
+            Dictionary<string, string> nextSer = new Dictionary<string, string>();
+            List<string> ops = new List<string>();
+            for (int i = 0; i < next.Count; i++)
+            {
+                string k = RecKey(next[i]);
+                string s = ser.Serialize(next[i]);
+                nextSer[k] = s;
+                string old;
+                if (!_cacheSer.TryGetValue(k, out old) || old != s) ops.Add("U\t" + s);
+            }
+            foreach (KeyValuePair<string, string> kv in _cacheSer)
+            {
+                if (!nextSer.ContainsKey(kv.Key)) ops.Add("D\t" + kv.Key);
+            }
+
+            _cache = next;
+            _cacheSer = nextSer;
+            if (ops.Count == 0) return;
+
+            if (ops.Count > JOURNAL_BULK_LIMIT)
+            {
+                // Toplu islem (iceri aktar / geri yukle / degistir): hemen atomik snapshot
+                WriteSnapshotAtomic(_cache);
+                _snapshotDirty = false;
+                try { if (File.Exists(JournalPath())) File.Delete(JournalPath()); } catch {}
+                return;
+            }
+
+            // Tekil islem: ANINDA diske gunluk satiri, tam snapshot 300ms sonra
+            try
+            {
+                File.AppendAllText(JournalPath(), string.Join("\n", ops.ToArray()) + "\n", new UTF8Encoding(false));
+            }
+            catch
+            {
+                WriteSnapshotAtomic(_cache);
+                _snapshotDirty = false;
+                return;
+            }
+            _snapshotDirty = true;
+            ScheduleFlush();
+        }
+
+        private static void WriteSnapshotAtomic(List<Dictionary<string, object>> devices)
         {
             JavaScriptSerializer ser = CreateSerializer();
             string json = ser.Serialize(devices);
@@ -1361,7 +1623,7 @@ namespace KuzgunCrmSetup
 
             Dictionary<string, object> envelope = new Dictionary<string, object>();
             envelope["app"] = "kuzgun-crm";
-            envelope["version"] = "2.4.0";
+            envelope["version"] = "2.4.1";
             envelope["exported_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             envelope["count"] = devices.Count;
             envelope["devices"] = devices;
@@ -1837,7 +2099,7 @@ namespace KuzgunCrmSetup
                 {
                     det.HasCloudConfig = true;
                     string json = File.ReadAllText(cfgFile);
-                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.4.0";
+                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.4.1";
                     det.CloudUrl = SimpleJsonExtract(json, "url");
                 }
 
@@ -1892,7 +2154,7 @@ namespace KuzgunCrmSetup
                 det.TitleColor = Color.FromArgb(14, 116, 144);
                 det.SummaryDetail = string.Format(
                     "Sistemde aktif Kuzgun CRM ({0}) bulundu. Tek tikla guncelleme yapildiginda masaustu uygulamaniz yenilenecek ve tum musteri verileriniz aynen korunacaktir.",
-                    det.CloudVersion ?? "v2.4.0");
+                    det.CloudVersion ?? "v2.4.1");
             }
             else if (det.HasLegacyOzi || det.HasLegacyAppData || det.HasDesktopShortcuts)
             {
@@ -2000,7 +2262,7 @@ namespace KuzgunCrmSetup
             _lblSubtitle.AutoSize = true;
 
             _lblVersion = new Label();
-            _lblVersion.Text = "v2.4.0";
+            _lblVersion.Text = "v2.4.1";
             _lblVersion.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
             _lblVersion.ForeColor = Color.FromArgb(252, 211, 77);
             _lblVersion.Location = new Point(585, 25);
@@ -2148,7 +2410,7 @@ namespace KuzgunCrmSetup
                 _btnStart.Text = "Tek Tıkla Kur";
             }
 
-            AppendLog("Kuzgun CRM v2.4.0 Kurulum ve Yonetim Sihirbazi hazir.");
+            AppendLog("Kuzgun CRM v2.4.1 Kurulum ve Yonetim Sihirbazi hazir.");
             AppendLog("Durum: " + det.SummaryTitle);
         }
 
