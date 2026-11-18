@@ -16,6 +16,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + ' - ' 
     const p = await b.newPage({ viewport: { width: w, height: h } });
     await p.goto('http://127.0.0.1:18899/', { waitUntil: 'load' }); await p.waitForTimeout(700);
     await p.evaluate(() => { window.__VM.showSetup = false; });
+    const cssCheck = await p.evaluate(() => {
+      const aside = document.querySelector('aside');
+      const bg = aside ? getComputedStyle(aside).backgroundColor : '';
+      return { bg, broken: !!window.__VM.cssBrokenBanner, ver: window.__VM.appVersion };
+    });
+    ok(cssCheck.bg === 'rgb(17, 24, 39)' && !cssCheck.broken, `${w}x${h}: Tailwind CSS gercek tarayicida yuklendi (${cssCheck.bg})`);
     for (const tab of ['dashboard', 'repairs', 'sales', 'customers', 'backups']) {
       await p.evaluate(t => { window.__VM.currentTab = t; }, tab); await p.waitForTimeout(100);
       const o = await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);

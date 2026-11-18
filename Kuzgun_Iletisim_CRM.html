@@ -109,7 +109,12 @@
                         <div class="mb-1 text-yellow-400"><i class="fa-solid fa-hard-drive mr-1"></i> Yerel mod (bu cihaz)</div>
                         <a href="#" @click.prevent="openSetup" class="block mb-1 text-blue-300 underline hover:text-blue-200">Buluta bağlan</a>
                     </template>
-                    <div>Kuzgun İletişim Yönetim Sistemi<br>v2.4.2</div>
+                    <div class="mt-2 pt-2 border-t border-gray-800 flex items-center justify-between gap-2">
+                        <span>Kuzgun İletişim<br>v{{ appVersion }}</span>
+                        <button @click="openErrorCenter" class="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 text-[11px] flex items-center gap-1" :class="errorLogs.length ? 'border-amber-500/70 text-amber-300' : ''" title="Hata Geçmişi ve Destek Kodu" data-testid="support-btn">
+                            <i class="fa-solid fa-life-ring"></i> Destek<span v-if="errorLogs.length" class="ml-0.5 px-1 rounded bg-amber-600 text-white text-[10px]">{{ errorLogs.length }}</span>
+                        </button>
+                    </div>
                 </div>
             </aside>
 
@@ -141,6 +146,9 @@
                         </div>
                         <button @click="currentTab = 'backups'; if (isCloud && authed) fetchDriveBackups()" title="Yedekleme ve Bulut Merkezi" class="text-sm bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-full hover:bg-blue-100 transition">
                             <i class="fa-solid fa-cloud-arrow-up mr-1"></i><span class="hidden sm:inline">Yedekleme</span>
+                        </button>
+                        <button @click="openErrorCenter" title="Destek / Hata Kodları" class="text-sm px-2.5 py-1.5 rounded-full border transition" :class="lastErrorCode ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'">
+                            <i class="fa-solid fa-bug"></i><span v-if="lastErrorCode" class="ml-1 font-mono text-xs font-bold">{{ lastErrorCode }}</span>
                         </button>
                         <button v-if="isCloud && authed" @click="openSettings" title="Ayarlar (PIN, bağlantı)" class="text-sm bg-gray-200 text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300 transition">
                             <i class="fa-solid fa-gear"></i>
@@ -288,11 +296,11 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="device in filteredRepairs" :key="device.id" class="border-b last:border-b-0 hover:bg-gray-50 transition">
+                                    <tr v-for="device in repairsPage" :key="device.id" class="border-b last:border-b-0 hover:bg-gray-50 transition">
                                         <td class="p-4 text-sm text-gray-600">{{ formatDate(device.created_at) }}</td>
                                         <td class="p-4">
                                             <a href="#" @click.prevent="openCustomer(device)" class="font-medium text-blue-700 hover:underline" v-html="hl(device.customer_name || '-', searchQuery)"></a>
-                                            <div class="text-xs text-gray-500">{{ device.customer_phone }}</div>
+                                            <div class="text-xs text-gray-500">{{ formatPhone(device.customer_phone) }}</div>
                                         </td>
                                         <td class="p-4 font-medium">{{ device.brand }} {{ device.model }}</td>
                                         <td class="p-4 text-sm text-gray-500 break-all">{{ device.imei }}</td>
@@ -312,6 +320,9 @@
                                     </tr>
                                 </tbody>
                             </table>
+                            <div v-if="filteredRepairs.length > repairsLimit" class="p-3 text-center border-t bg-gray-50">
+                                <button @click="repairsLimit += 50" class="text-sm text-blue-600 hover:underline font-medium">Daha fazla göster ({{ filteredRepairs.length - repairsLimit }} tamir kaydı daha)</button>
+                            </div>
                         </div>
                     </div>
 
@@ -357,7 +368,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="device in filteredSales" :key="device.id" class="border-b last:border-b-0 hover:bg-gray-50 transition">
+                                    <tr v-for="device in salesPage" :key="device.id" class="border-b last:border-b-0 hover:bg-gray-50 transition">
                                         <td class="p-4 text-sm text-gray-600">{{ formatDate(device.created_at) }}</td>
                                         <td class="p-4 font-medium">{{ device.brand }} {{ device.model }}</td>
                                         <td class="p-4 text-sm text-gray-500 break-all">{{ device.imei }}</td>
@@ -378,6 +389,9 @@
                                     </tr>
                                 </tbody>
                             </table>
+                            <div v-if="filteredSales.length > salesLimit" class="p-3 text-center border-t bg-gray-50">
+                                <button @click="salesLimit += 50" class="text-sm text-green-600 hover:underline font-medium">Daha fazla göster ({{ filteredSales.length - salesLimit }} satış kaydı daha)</button>
+                            </div>
                         </div>
                     </div>
 
@@ -403,7 +417,7 @@
                                 <tbody>
                                     <tr v-for="c in customerPage" :key="c.key" class="border-b last:border-b-0 hover:bg-gray-50">
                                         <td class="p-4 font-medium text-gray-800">{{ c.name || '(isimsiz)' }} <span v-if="c.active" class="ml-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{{ c.active }} aktif</span></td>
-                                        <td class="p-4 text-sm text-gray-600">{{ c.phone || '-' }}</td>
+                                        <td class="p-4 text-sm text-gray-600">{{ formatPhone(c.phone) || '-' }}</td>
                                         <td class="p-4 text-sm text-gray-600">{{ c.devices.length }}</td>
                                         <td class="p-4 text-sm font-semibold">{{ c.total }} ₺</td>
                                         <td class="p-4 text-sm text-gray-500">{{ formatDate(c.last) }}</td>
@@ -494,7 +508,7 @@
                             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-wrap gap-2">
                                 <h4 class="font-bold text-gray-800 flex items-center gap-2 text-sm">
                                     <i class="fa-solid fa-clock-rotate-left text-amber-600"></i>
-                                    Anlık Görüntüler (Geri Al) <span class="text-xs font-normal text-gray-500">- bu cihazda, son {{ MAX_SNAPSHOTS }}</span>
+                                    Anlık Görüntüler (Geri Al) <span class="text-xs font-normal text-gray-500">- {{ snapsOnDisk ? 'diskte (anlik klasörü)' : 'bu cihazda' }}, son {{ MAX_SNAPSHOTS }}</span>
                                 </h4>
                                 <button @click="takeSnapshot('Elle alınan görüntü', true)" class="text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 font-semibold"><i class="fa-solid fa-camera mr-1"></i>Şimdi Görüntü Al</button>
                             </div>
@@ -689,7 +703,16 @@
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">IMEI Numarası</label>
-                                    <input type="text" v-model="form.imei" placeholder="15 Haneli IMEI" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                                    <input type="text" v-model="form.imei" placeholder="15 Haneli IMEI" class="p-2.5 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" data-testid="imei-input">
+                                    <div v-if="imeiConflicts.sold" class="mt-1.5 p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800 flex items-center justify-between gap-2" data-testid="imei-sold-warn">
+                                        <span><i class="fa-solid fa-circle-exclamation mr-1"></i><b>[KZG-603]</b> Bu IMEI daha önce <b>SATILMIŞ</b> ({{ formatDate(imeiConflicts.sold.created_at) }})!</span>
+                                        <button type="button" @click="openCustomerByImei(imeiConflicts.sold)" class="underline font-semibold whitespace-nowrap">Geçmişi Gör</button>
+                                    </div>
+                                    <div v-else-if="imeiConflicts.matches.length" class="mt-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center justify-between gap-2" data-testid="imei-repeat-warn">
+                                        <span><i class="fa-solid fa-clock-rotate-left mr-1"></i>Bu cihaz daha önce <b>{{ formatDate(imeiConflicts.matches[0].created_at) }}</b> tarihinde geldi ({{ imeiConflicts.matches[0].customer_name || 'Mağaza' }} · {{ imeiConflicts.matches.length }} kayıt)</span>
+                                        <button type="button" @click="openCustomerByImei(imeiConflicts.matches[0])" class="underline font-semibold whitespace-nowrap">Geçmişi Gör</button>
+                                    </div>
+                                    <p v-if="imeiLuhnWarning" class="mt-1 text-[11px] text-amber-700" data-testid="imei-luhn-warn"><i class="fa-solid fa-triangle-exclamation mr-1"></i>{{ imeiLuhnWarning }}</p>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Seri Numarası</label>
@@ -935,10 +958,70 @@
             </div>
         </div>
 
+        <!-- CSS Fallback Banner (inline style so it stays readable even if CSS failed to load) -->
+        <div v-if="cssBrokenBanner" style="position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#991b1b;color:#fff;padding:10px 14px;font-family:sans-serif;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;" data-testid="css-broken-banner">
+            <span><b>[KZG-203]</b> Arayüz stilleri yüklenemedi. Uygulamayı kapatıp yeniden açın veya kurulumu tekrarlayın.</span>
+            <button type="button" @click="copyErrorReport()" style="background:#fff;color:#991b1b;border:none;border-radius:6px;padding:6px 10px;font-weight:bold;cursor:pointer;">Raporu Kopyala</button>
+        </div>
+
+        <!-- Error / Support Center Modal -->
+        <div v-if="errorCenterOpen" class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-[85]" @click.self="errorCenterOpen = false" data-testid="error-center">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden modal-box flex flex-col">
+                <div class="bg-gray-900 text-white px-5 py-4 flex items-center justify-between">
+                    <div>
+                        <h3 class="font-bold text-base flex items-center gap-2"><i class="fa-solid fa-life-ring text-amber-400"></i> Destek &amp; Hata Takip Merkezi</h3>
+                        <p class="text-xs text-gray-300 mt-0.5">Bir sorun yaşarsanız kodu söylemeniz veya raporu kopyalayıp iletmeniz yeterlidir.</p>
+                    </div>
+                    <button @click="errorCenterOpen = false" class="text-gray-400 hover:text-white text-xl">&times;</button>
+                </div>
+                <div class="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 text-sm">
+                    <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div class="text-xs text-blue-900 space-y-0.5">
+                            <div><b>Sürüm:</b> v{{ appVersion }} · <b>Mod:</b> {{ statusInfo && statusInfo.isStandalone ? 'Masaüstü' : (isCloud ? 'Google Bulut' : 'Yerel Dosya') }} <span v-if="statusInfo && statusInfo.version">· <b>Sunucu:</b> v{{ statusInfo.version }}</span></div>
+                            <div><b>Kayıt:</b> {{ devices.length }} · <b>Son Hata Kodu:</b> <span class="font-mono font-bold">{{ lastErrorCode || 'Yok (Sorunsuz)' }}</span></div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="copyErrorReport()" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 whitespace-nowrap" data-testid="copy-error-report"><i class="fa-solid fa-copy mr-1"></i> Destek Raporunu Kopyala</button>
+                            <button v-if="errorLogs.length" @click="clearErrorLogs" class="px-2.5 py-1.5 rounded-lg bg-white text-gray-600 border border-gray-300 text-xs hover:bg-gray-100">Temizle</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Son Olay &amp; Hata Kayıtları ({{ errorLogs.length }})</h4>
+                        <div v-if="!errorLogs.length" class="p-6 text-center text-gray-400 border rounded-xl text-xs">Henüz kaydedilmiş bir hata veya uyarı yok.</div>
+                        <ul v-else class="border rounded-xl divide-y max-h-60 overflow-y-auto">
+                            <li v-for="item in errorLogs" :key="item.id" class="p-3 flex items-start justify-between gap-3 text-xs">
+                                <div class="space-y-0.5 min-w-0">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800">{{ item.code }}</span>
+                                        <span class="font-semibold text-gray-800">{{ item.title }}</span>
+                                        <span class="text-gray-400">{{ formatDate(item.ts) }}</span>
+                                    </div>
+                                    <div class="text-gray-600 break-words">{{ item.detail }}</div>
+                                </div>
+                                <button @click="copyErrorReport(item)" class="px-2 py-1 border rounded text-gray-600 hover:bg-gray-100 whitespace-nowrap">Kopyala</button>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <details class="border rounded-xl p-3 bg-gray-50 text-xs">
+                        <summary class="font-semibold text-gray-700 cursor-pointer">Hata Kodu Rehberi ({{ Object.keys(errorCatalog).length }} kod)</summary>
+                        <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto">
+                            <div v-for="(info, code) in errorCatalog" :key="code" class="bg-white p-2 rounded border">
+                                <span class="font-mono font-bold text-blue-700">{{ code }}</span> · <span class="font-medium text-gray-800">{{ info.title }}</span>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </div>
+
         <!-- Toast -->
         <transition enter-active-class="transition duration-200" enter-from-class="opacity-0 translate-y-4" leave-active-class="transition duration-300" leave-to-class="opacity-0 translate-y-4">
-            <div v-if="toast" class="fixed top-3 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-3 rounded-lg shadow-xl z-[90] w-[calc(100vw-1.5rem)] max-w-sm flex items-start gap-2 pointer-events-none" data-testid="toast">
-                <i :class="toastIcon" class="mt-0.5"></i> {{ toast }}
+            <div v-if="toast" class="fixed top-3 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-3 rounded-lg shadow-xl z-[90] w-[calc(100vw-1.5rem)] max-w-md flex items-start gap-2" data-testid="toast">
+                <i :class="toastIcon" class="mt-0.5 flex-shrink-0"></i>
+                <span class="flex-1 break-words">{{ toast }}</span>
+                <button v-if="toastCode" @click="copyErrorReport()" class="ml-2 px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-[11px] font-semibold whitespace-nowrap flex-shrink-0">Kopyala</button>
             </div>
         </transition>
     </div>
@@ -946,7 +1029,63 @@
     <script>
         const { createApp } = Vue
 
+        const APP_VERSION = '2.4.3';
         const LOCAL_DATA_KEY = 'kuzgun_crm_data_v2';
+        const ERROR_LOG_KEY = 'kuzgun_crm_error_log_v1';
+        const ERROR_CATALOG = {
+            'KZG-101': { cat: 'Kurulum', title: 'Kurulum betiği hatası', fix: 'Kurulum logunu inceleyin; antivirüs geçici kapatılıp yeniden denenebilir.' },
+            'KZG-102': { cat: 'Kurulum', title: 'Uygulama dosyası kopyalanamadı (kilitli)', fix: 'Açık Kuzgun CRM penceresini kapatıp kurulumu yeniden çalıştırın.' },
+            'KZG-103': { cat: 'Kurulum', title: 'Uygulama penceresi açılamadı', fix: 'Edge veya Chrome kurulu olduğunu doğrulayın.' },
+            'KZG-104': { cat: 'Kurulum', title: 'Eski sunucu portu boşaltılamadı', fix: 'Görev Yöneticisinden KuzgunCRM.exe görevlerini sonlandırın.' },
+            'KZG-105': { cat: 'Kurulum', title: 'Kurulum paketleri çıkarılamadı', fix: 'Disk alanını ve %LOCALAPPDATA%\KuzgunCRM yazma iznini kontrol edin.' },
+            'KZG-109': { cat: 'Kurulum', title: 'Beklenmeyen kurulum/EXE hatası', fix: 'hatalar.log dosyasını destek ekibine iletin.' },
+            'KZG-201': { cat: 'Sunucu/UI', title: 'Yerel sunucu yanıt vermiyor', fix: 'Masaüstü kısayolundan uygulamayı yeniden başlatın.' },
+            'KZG-202': { cat: 'Sunucu/UI', title: 'Sunucu ve arayüz sürümü uyuşmuyor', fix: 'Açık tüm CRM pencerelerini kapatıp yeniden açın.' },
+            'KZG-203': { cat: 'Sunucu/UI', title: 'Arayüz stilleri (CSS) yüklenemedi', fix: 'Eski sunucu açık kalmış olabilir; tüm pencereleri kapatıp yeniden açın.' },
+            'KZG-204': { cat: 'Sunucu/UI', title: 'Uygulama motoru (Vue) yüklenemedi', fix: 'Uygulamayı yeniden başlatın; ilk kurulumda internet bağlantısını kontrol edin.' },
+            'KZG-205': { cat: 'Sunucu/UI', title: 'Beklenmeyen arayüz/JS hatası', fix: 'Destek raporunu kopyalayıp geliştiriciye iletin.' },
+            'KZG-301': { cat: 'Veritabanı', title: 'Veritabanı .bak yedeğinden kurtarıldı', fix: 'Bilgilendirme: son verilerinizi kontrol edin.' },
+            'KZG-302': { cat: 'Veritabanı', title: 'Veritabanı yedekler klasöründen kurtarıldı', fix: 'Bilgilendirme: son kayıtlarınızı kontrol edin.' },
+            'KZG-303': { cat: 'Veritabanı', title: 'Disk yazma veya okuma hatası', fix: 'Disk alanı ve klasör izinlerini kontrol edin.' },
+            'KZG-304': { cat: 'Veritabanı', title: 'Anlık görüntü (snapshot) hatası', fix: 'Disk yazma iznini veya seçili görüntünün varlığını kontrol edin.' },
+            'KZG-305': { cat: 'Veritabanı', title: 'Tarayıcı depolama alanı dolu', fix: 'Eski anlık görüntüleri silin veya Masaüstü sürümünü kullanın.' },
+            'KZG-401': { cat: 'Güvenlik', title: 'Erişim PIN kodu hatalı', fix: 'Doğru PIN girin (ilk kurulumda varsayılan: kuzgun2024).' },
+            'KZG-402': { cat: 'Güvenlik', title: 'Geçersiz veya kısa PIN', fix: 'PIN en az 4 karakter olmalı ve iki alanda aynı olmalıdır.' },
+            'KZG-403': { cat: 'Güvenlik', title: 'Sunucuda bilinmeyen işlem', fix: 'KuzgunCRM_Kurulum.exe ile güncel sürüme yükseltin.' },
+            'KZG-404': { cat: 'Güvenlik', title: 'Geçersiz yedek veya kayıt verisi', fix: 'JSON dosya yapısını kontrol edin.' },
+            'KZG-501': { cat: 'Bulut', title: 'Geçersiz Google Web App adresi', fix: 'https://script.google.com/macros/s/.../exec bağlantısını kontrol edin.' },
+            'KZG-502': { cat: 'Bulut', title: 'Google sunucu zaman aşımı / bağlantı yok', fix: 'İnternet bağlantısını kontrol edip tekrar deneyin.' },
+            'KZG-503': { cat: 'Bulut', title: 'Google Apps Script erişim/yetki hatası', fix: 'Web Uygulaması erişimini "Herkes (Anyone)" olarak yayınlayın.' },
+            'KZG-504': { cat: 'Bulut', title: 'Çevrimdışı kuyruk buluta gönderilemedi', fix: 'İnternet gelince otomatik tekrar denenir.' },
+            'KZG-505': { cat: 'Bulut', title: 'Drive yedekleme/geri yükleme hatası', fix: 'Google hesabının Drive izinlerini onaylayın.' },
+            'KZG-506': { cat: 'Bulut', title: 'Günlük yedek tetikleyicisi kurulamadı', fix: 'Apps Script projesinde tetikleyici izinlerini onaylayın.' },
+            'KZG-507': { cat: 'Bulut', title: 'Bulut bağlantısı yok', fix: 'Sol menüden "Google Buluta Bağla" ile bağlayın.' },
+            'KZG-601': { cat: 'Aktarım', title: 'Yüklenen JSON dosyası bozuk/geçersiz', fix: 'Geçerli bir Kuzgun CRM .json yedeği seçin.' },
+            'KZG-602': { cat: 'Aktarım', title: 'Eski sürüm veri aktarımı hatası', fix: 'Otomatik yedek klasörünüz korunur; raporu paylaşın.' },
+            'KZG-603': { cat: 'Aktarım', title: 'Tekrar eden / satılmış IMEI uyarısı', fix: 'Cihazın geçmiş kaydını Müşteri Kartından kontrol edin.' }
+        };
+        function classifyError(msg, hint) {
+            if (hint && ERROR_CATALOG[hint]) return hint;
+            const m = String(msg || '');
+            const ex = m.match(/KZG-\d{3}/);
+            if (ex && ERROR_CATALOG[ex[0]]) return ex[0];
+            if (/PIN_HATALI|PIN hatalı|Yanlış PIN/i.test(m)) return 'KZG-401';
+            if (/PIN_KISA|en az 4|eşleşmiyor/i.test(m)) return 'KZG-402';
+            if (/BILINMEYEN_ISLEM|Sunucu sürümü eski/i.test(m)) return 'KZG-403';
+            if (/GECERSIZ_YEDEK/i.test(m)) return 'KZG-404';
+            if (/YEDEK_BULUNAMADI/i.test(m)) return 'KZG-304';
+            if (/NO_BACKEND|Bulut bağlantısı yok/i.test(m)) return 'KZG-507';
+            if (/ZAMAN_ASIMI|timeout|Failed to fetch|NetworkError|Çevrimdışı/i.test(m)) return 'KZG-502';
+            if (/SUNUCU_HTML_YANIT|403|yetki|izin/i.test(m)) return 'KZG-503';
+            if (/exec|Web Uygulaması adresi/i.test(m)) return 'KZG-501';
+            if (/Drive|yedek/i.test(m)) return 'KZG-505';
+            if (/Günlük|tetik/i.test(m)) return 'KZG-506';
+            if (/Anlık görüntü|snapshot/i.test(m)) return 'KZG-304';
+            if (/depolama dolu|QuotaExceeded/i.test(m)) return 'KZG-305';
+            if (/JSON|Dosya/i.test(m)) return 'KZG-601';
+            if (/Sunucuya ulaşılamadı|port/i.test(m)) return 'KZG-201';
+            return 'KZG-205';
+        }
         const LOCAL_LEGACY_KEY = 'kuzgun_crm_data';
         const PREMIGRATE_BACKUP_KEY = 'kuzgun_crm_backup_premigrate';
         const PIN_KEY = 'kuzgun_crm_pin';
@@ -1130,10 +1269,19 @@
                     currentFact: FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)],
                     currentTab: 'dashboard',
                     devices: [],
+                    appVersion: APP_VERSION,
                     searchQuery: '',
+                    repairsLimit: 50,
+                    salesLimit: 50,
                     customerSearch: '',
                     customerSort: 'last',
                     customerLimit: 50,
+                    errorLogs: [],
+                    errorCatalog: ERROR_CATALOG,
+                    errorCenterOpen: false,
+                    lastErrorCode: '',
+                    toastCode: '',
+                    cssBrokenBanner: false,
                     customerKey: null,
                     globalOpen: false,
                     globalQuery: '',
@@ -1196,6 +1344,7 @@
                     backupFilter: 'ALL',
                     backupError: '',
                     snapshots: [],
+                    snapsOnDisk: false,
                     MAX_SNAPSHOTS: 5
                 }
             },
@@ -1254,10 +1403,48 @@
                     return this.indexed.filter(x => x.d.type === 'REPAIR' && this.matchesDate(x.d) && this.matchTokens(x.idx, toks))
                         .map(x => x.d).sort((p, q) => q.created_at - p.created_at);
                 },
+                repairsPage() {
+                    return this.filteredRepairs.slice(0, this.repairsLimit);
+                },
                 filteredSales() {
                     const toks = this.tokens(this.searchQuery);
                     return this.indexed.filter(x => x.d.type === 'SALE' && this.matchesDate(x.d) && this.matchTokens(x.idx, toks))
                         .map(x => x.d).sort((p, q) => q.created_at - p.created_at);
+                },
+                salesPage() {
+                    return this.filteredSales.slice(0, this.salesLimit);
+                },
+                imeiMap() {
+                    const m = new Map();
+                    this.devices.forEach(d => {
+                        const k = this.normImei(d.imei);
+                        if (k.length < 8) return;
+                        if (!m.has(k)) m.set(k, []);
+                        m.get(k).push(d);
+                    });
+                    return m;
+                },
+                imeiConflicts() {
+                    const k = this.normImei(this.form && this.form.imei);
+                    if (k.length < 8) return { matches: [], sold: null };
+                    const curId = this.editingDevice ? String(this.editingDevice.id) : null;
+                    const matches = (this.imeiMap.get(k) || [])
+                        .filter(d => curId === null || String(d.id) !== curId)
+                        .slice()
+                        .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+                    const sold = matches.find(d => d.type === 'SALE' && d.status === 'SOLD') || null;
+                    return { matches, sold };
+                },
+                imeiLuhnWarning() {
+                    const raw = String((this.form && this.form.imei) || '').replace(/\s+/g, '');
+                    if (!/^\d{15}$/.test(raw)) return '';
+                    let sum = 0;
+                    for (let i = 0; i < 15; i++) {
+                        let n = parseInt(raw[i], 10);
+                        if (i % 2 === 1) { n *= 2; if (n > 9) n -= 9; }
+                        sum += n;
+                    }
+                    return (sum % 10 === 0) ? '' : 'IMEI kontrol hanesi standart dışı görünüyor (yazım hatası olabilir).';
                 },
                 customerMap() {
                     const map = new Map();
@@ -1343,10 +1530,19 @@
                     return 'Veriler Google Sheets ile eşitlendi';
                 }
             },
+            errorCaptured(err, instance, info) {
+                try { this.recordError('KZG-205', ((err && err.message) || err) + (info ? ' (' + info + ')' : ''), 'error'); } catch (e) {}
+                return true;
+            },
             mounted() {
+                this.loadErrorLogs();
+                window.addEventListener('error', this.onGlobalJsError);
+                window.addEventListener('unhandledrejection', this.onUnhandledRejection);
+                window.addEventListener('beforeunload', this.flushLocalCache);
                 try { const sv = localStorage.getItem('kuzgun_ui_scale'); if (sv && this.uiScaleOptions.some(o => o.value === sv)) this.uiScale = sv; } catch (e) {}
                 this.applyUiScale();
                 window.addEventListener('resize', this.onResize);
+                this.$nextTick(() => this.verifyCssLoaded());
                 this.nextFunFact();
                 this.loadSnapshots();
                 this.isCloud = Gas.available();
@@ -1366,6 +1562,10 @@
             },
             beforeUnmount() {
                 window.removeEventListener('resize', this.onResize);
+                window.removeEventListener('error', this.onGlobalJsError);
+                window.removeEventListener('unhandledrejection', this.onUnhandledRejection);
+                window.removeEventListener('beforeunload', this.flushLocalCache);
+                this.flushLocalCache();
                 window.removeEventListener('focus', this.onWindowFocus);
                 window.removeEventListener('online', this.onOnline);
                 window.removeEventListener('keydown', this.onGlobalKey);
@@ -1418,9 +1618,38 @@
                 digits(str) {
                     return str ? String(str).replace(/\D/g, '') : '';
                 },
+                normImei(str) {
+                    return str ? String(str).replace(/[\s-]+/g, '').toUpperCase() : '';
+                },
                 normPhone(str) {
                     const dg = this.digits(str);
                     return dg.length >= 10 ? dg.slice(-10) : dg;
+                },
+                formatPhone(str) {
+                    if (!str) return '';
+                    const dg = this.digits(str);
+                    if (dg.length === 10 && dg.startsWith('5')) {
+                        return '0' + dg.slice(0, 3) + ' ' + dg.slice(3, 6) + ' ' + dg.slice(6, 8) + ' ' + dg.slice(8);
+                    }
+                    if (dg.length === 11 && dg.startsWith('05')) {
+                        return dg.slice(0, 4) + ' ' + dg.slice(4, 7) + ' ' + dg.slice(7, 9) + ' ' + dg.slice(9);
+                    }
+                    if (dg.length === 12 && dg.startsWith('905')) {
+                        const t = '0' + dg.slice(2);
+                        return t.slice(0, 4) + ' ' + t.slice(4, 7) + ' ' + t.slice(7, 9) + ' ' + t.slice(9);
+                    }
+                    return String(str).trim();
+                },
+                openCustomerByImei(d) {
+                    if (!d) return;
+                    const k = this.custKey(d);
+                    if (k) {
+                        this.isModalOpen = false;
+                        this.customerKey = k;
+                    } else {
+                        this.isModalOpen = false;
+                        this.editDevice(d);
+                    }
                 },
                 custKey(d) {
                     const p = this.normPhone(d.customer_phone);
@@ -1691,8 +1920,21 @@
                     try { return localStorage.getItem(LOCAL_DATA_KEY) !== null; } catch (e) { return false; }
                 },
                 cacheLocal() {
-                    writeJSON(LOCAL_DATA_KEY, this.devices);
                     if (this.statusInfo) this.statusInfo = { ...this.statusInfo, count: this.devices.length };
+                    if (this.devices.length < 300) {
+                        clearTimeout(this._lsTimer);
+                        writeJSON(LOCAL_DATA_KEY, this.devices);
+                        return;
+                    }
+                    clearTimeout(this._lsTimer);
+                    this._lsTimer = setTimeout(() => { writeJSON(LOCAL_DATA_KEY, this.devices); }, 150);
+                },
+                flushLocalCache() {
+                    if (this._lsTimer) {
+                        clearTimeout(this._lsTimer);
+                        this._lsTimer = null;
+                        writeJSON(LOCAL_DATA_KEY, this.devices);
+                    }
                 },
                 async initCloud() {
                     let saved = null;
@@ -1720,8 +1962,15 @@
                         this.showLogin = false;
                         this.statusInfo = info;
                         try { localStorage.setItem(PIN_KEY, this.pinInput); } catch (e) {}
+                        if (info && info.isStandalone && info.version && info.version !== APP_VERSION) {
+                            this.showToast('Sunucu (v' + info.version + ') ve arayüz (v' + APP_VERSION + ') sürümü uyuşmuyor. Uygulamayı kapatıp yeniden açın.', 'error', 'KZG-202');
+                        }
+                        if (info && info.recoveryNote) {
+                            this.showToast(info.recoveryNote, 'warn', info.recoveryCode || 'KZG-301');
+                        }
                         await this.pull();
                         this.fetchDriveBackups();
+                        this.loadDiskSnapshots();
                         return true;
                     } catch (e) {
                         const msg = String((e && e.message) || e || '');
@@ -2020,19 +2269,58 @@
                         this.loadingBackups = false;
                     }
                 },
+                async snapCall(name, args) {
+                    const loc = Gas.localApi();
+                    if (!loc) throw new Error('NO_LOCAL');
+                    const res = await fetch(loc, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ fn: name, args: [this.pinInput].concat(args || []) })
+                    });
+                    const data = JSON.parse(await res.text());
+                    if (!data || !data.ok) throw new Error((data && data.error) || 'HATA');
+                    return data.result;
+                },
                 loadSnapshots() {
                     const list = readJSON(SNAP_KEY, []);
                     this.snapshots = Array.isArray(list) ? list : [];
                 },
-                takeSnapshot(reason, notify) {
+                async loadDiskSnapshots() {
+                    // Masaüstü uygulamasında anlık görüntüler tarayıcı depolaması yerine diske (anlik klasörü) yazılır.
+                    if (!Gas.localApi() || !this.pinInput) return;
                     try {
-                        const snap = {
-                            id: Date.now() + '-' + Math.floor(Math.random() * 1000),
-                            ts: Date.now(),
-                            reason: reason || 'Anlık görüntü',
-                            count: this.devices.length,
-                            devices: JSON.parse(JSON.stringify(this.devices))
-                        };
+                        const old = readJSON(SNAP_KEY, []);
+                        if (Array.isArray(old) && old.length) {
+                            for (const sn of old) await this.snapCall('saveSnapshot', [sn]);
+                            try { localStorage.removeItem(SNAP_KEY); } catch (e) {}
+                        }
+                        this.snapshots = await this.snapCall('listSnapshots', []);
+                        this.MAX_SNAPSHOTS = 20;
+                        this.snapsOnDisk = true;
+                    } catch (e) {
+                        this.snapsOnDisk = false;
+                    }
+                },
+                async takeSnapshot(reason, notify) {
+                    const snap = {
+                        id: Date.now() + '-' + Math.floor(Math.random() * 1000),
+                        ts: Date.now(),
+                        reason: reason || 'Anlık görüntü',
+                        count: this.devices.length,
+                        devices: JSON.parse(JSON.stringify(this.devices))
+                    };
+                    if (this.snapsOnDisk) {
+                        try {
+                            await this.snapCall('saveSnapshot', [snap]);
+                            this.snapshots = await this.snapCall('listSnapshots', []);
+                            if (notify) this.showToast('Anlık görüntü alındı (' + snap.count + ' kayıt)', 'ok');
+                            return true;
+                        } catch (e) {
+                            if (notify) this.showToast('Anlık görüntü diske yazılamadı', 'error');
+                            return false;
+                        }
+                    }
+                    try {
                         let list = [snap].concat(this.snapshots).slice(0, this.MAX_SNAPSHOTS);
                         // Depolama dolarsa eskileri atarak yeniden dene
                         while (list.length) {
@@ -2047,7 +2335,12 @@
                         return false;
                     }
                 },
-                removeSnapshot(id) {
+                async removeSnapshot(id) {
+                    if (this.snapsOnDisk) {
+                        try { await this.snapCall('deleteSnapshot', [id]); } catch (e) {}
+                        this.snapshots = this.snapshots.filter(x => x.id !== id);
+                        return;
+                    }
                     this.snapshots = this.snapshots.filter(x => x.id !== id);
                     writeJSON(SNAP_KEY, this.snapshots);
                 },
@@ -2076,11 +2369,16 @@
                         if (this.selectedBackup === target) this.restoreLoading = false;
                     }
                 },
-                openRestoreFromSnapshot(sn) {
+                async openRestoreFromSnapshot(sn) {
                     this.resetRestoreState();
                     this.selectedBackup = { name: sn.reason, updated: sn.ts, count: sn.count };
                     this.restoreSource = 'snapshot';
-                    this.restoreDevices = JSON.parse(JSON.stringify(sn.devices || []));
+                    let devs = sn.devices;
+                    if (!devs && this.snapsOnDisk) {
+                        try { const full = await this.snapCall('getSnapshot', [sn.id]); devs = full.devices; }
+                        catch (e) { this.showToast('Anlık görüntü okunamadı: ' + this.errText(e), 'error'); return; }
+                    }
+                    this.restoreDevices = JSON.parse(JSON.stringify(devs || []));
                     this.restoreMode = 'replace';
                     this.restoreModalOpen = true;
                 },
@@ -2096,7 +2394,7 @@
                 async downloadDriveBackup(b) {
                     try {
                         const data = await Gas.call('getDriveBackup', [this.pinInput, b.id], 60000);
-                        const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.3.1', exported_at: new Date().toISOString(), count: data.devices.length, devices: data.devices }, null, 2);
+                        const payload = JSON.stringify({ app: 'kuzgun-crm', version: APP_VERSION, exported_at: new Date().toISOString(), count: data.devices.length, devices: data.devices }, null, 2);
                         this.saveFile(payload, b.name);
                         this.showToast(b.name + ' indirildi', 'ok');
                     } catch (e) {
@@ -2289,7 +2587,7 @@
                     }
                     this.restoring = true;
                     try {
-                        if (this.restoreSafety) this.takeSnapshot('Geri yükleme öncesi (' + (mode === 'replace' ? 'sıfırdan' : 'eşle') + ')');
+                        if (this.restoreSafety) await this.takeSnapshot('Geri yükleme öncesi (' + (mode === 'replace' ? 'sıfırdan' : 'eşle') + ')');
                         let msg = '';
                         if (this.restoreSource === 'drive') {
                             const res = await Gas.call('restoreFromDriveBackup', [this.pinInput, this.selectedBackup.id, mode, this.restoreSafety], 120000);
@@ -2415,7 +2713,7 @@
                     setTimeout(() => URL.revokeObjectURL(url), 1000);
                 },
                 exportBackup() {
-                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: '2.3.1', exported_at: new Date().toISOString(), count: this.devices.length, devices: this.devices }, null, 2);
+                    const payload = JSON.stringify({ app: 'kuzgun-crm', version: APP_VERSION, exported_at: new Date().toISOString(), count: this.devices.length, devices: this.devices }, null, 2);
                     this.saveFile(payload, 'kuzgun-crm-' + new Date().toISOString().slice(0, 10) + '.json');
                     this.showToast(this.devices.length + ' kayıt JSON olarak indirildi', 'ok');
                 },
@@ -2462,15 +2760,114 @@
                     reader.onerror = () => this.showToast('Dosya okunamadı', 'error');
                     reader.readAsText(file);
                 },
-                showToast(msg, kind) {
-                    this.toast = msg;
+                loadErrorLogs() {
+                    const arr = readJSON(ERROR_LOG_KEY, []);
+                    this.errorLogs = Array.isArray(arr) ? arr : [];
+                    if (this.errorLogs.length) this.lastErrorCode = this.errorLogs[0].code || '';
+                },
+                recordError(code, detail, kind) {
+                    const c = classifyError(detail, code);
+                    const info = ERROR_CATALOG[c] || { title: 'Bilinmeyen hata' };
+                    const entry = {
+                        id: Date.now() + '-' + Math.floor(Math.random() * 1000),
+                        ts: Date.now(),
+                        code: c,
+                        kind: kind || 'error',
+                        title: info.title,
+                        detail: String(detail || '').slice(0, 400)
+                    };
+                    this.errorLogs = [entry].concat(this.errorLogs).slice(0, 50);
+                    this.lastErrorCode = c;
+                    writeJSON(ERROR_LOG_KEY, this.errorLogs);
+                    const loc = Gas.localApi();
+                    if (loc && typeof fetch === 'function') {
+                        fetch(loc, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ fn: 'logClientError', args: [c, entry.detail] })
+                        }).catch(() => {});
+                    }
+                    return c;
+                },
+                openErrorCenter() {
+                    this.errorCenterOpen = true;
+                },
+                clearErrorLogs() {
+                    this.errorLogs = [];
+                    this.lastErrorCode = '';
+                    try { localStorage.removeItem(ERROR_LOG_KEY); } catch (e) {}
+                },
+                copyErrorReport(item) {
+                    const target = item || this.errorLogs[0] || { code: 'YOK', title: 'Aktif hata yok', detail: '-', ts: Date.now() };
+                    const mod = (this.statusInfo && this.statusInfo.isStandalone) ? 'standalone' : (this.isCloud ? 'cloud' : 'file');
+                    const text = [
+                        '[Kuzgun CRM Destek Raporu]',
+                        'Hata Kodu: ' + target.code + ' - ' + target.title,
+                        'Surum: v' + APP_VERSION + ' | Mod: ' + mod + (this.statusInfo && this.statusInfo.version ? (' | Sunucu: v' + this.statusInfo.version) : ''),
+                        'Zaman: ' + this.formatDate(target.ts),
+                        'Detay: ' + (target.detail || '-')
+                    ].join('\n');
+                    try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(text).catch(() => {});
+                        }
+                    } catch (e) {}
+                    this.showToast('Destek raporu panoya kopyalandı (' + target.code + ')', 'ok');
+                },
+                onGlobalJsError(ev) {
+                    const msg = (ev && (ev.message || (ev.error && ev.error.message))) || 'JS hatası';
+                    this.recordError('KZG-205', msg, 'error');
+                },
+                onUnhandledRejection(ev) {
+                    const r = ev && ev.reason;
+                    const msg = String((r && r.message) || r || 'Promise reddi');
+                    const code = classifyError(msg);
+                    this.recordError(code, msg, 'error');
+                },
+                verifyCssLoaded() {
+                    try {
+                        if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')) return;
+                        const aside = document.querySelector('aside');
+                        if (!aside || typeof getComputedStyle !== 'function') return;
+                        const bg = getComputedStyle(aside).backgroundColor;
+                        if (bg === 'rgb(17, 24, 39)' || bg === 'rgb(17,24,39)') return;
+                        // Tailwind CSS yuklenemedi -> KZG-203 kaydet ve CDN fallback ekle
+                        this.cssBrokenBanner = true;
+                        this.showToast('Arayüz stilleri yüklenemedi. Uygulamayı kapatıp yeniden açın.', 'error', 'KZG-203');
+                        if (!document.querySelector('script[src*="cdn.tailwindcss.com"]')) {
+                            const tw = document.createElement('script');
+                            tw.src = 'https://cdn.tailwindcss.com';
+                            tw.onload = () => { this.cssBrokenBanner = false; };
+                            document.head.appendChild(tw);
+                        }
+                        if (!document.querySelector('link[href*="font-awesome"]')) {
+                            const fa = document.createElement('link');
+                            fa.rel = 'stylesheet';
+                            fa.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
+                            document.head.appendChild(fa);
+                        }
+                    } catch (e) {}
+                },
+                showToast(msg, kind, hintCode) {
+                    let displayMsg = String(msg || '');
+                    let code = '';
+                    if (kind === 'error' || kind === 'warn') {
+                        code = this.recordError(hintCode, displayMsg, kind);
+                        if (displayMsg.indexOf('[' + code + ']') === -1) {
+                            displayMsg = '[' + code + '] ' + displayMsg;
+                        }
+                    }
+                    this.toastCode = code;
+                    this.toast = displayMsg;
                     this.toastIcon = kind === 'error'
                         ? 'fa-solid fa-triangle-exclamation text-red-400'
-                        : kind === 'ok'
-                            ? 'fa-solid fa-circle-check text-emerald-400'
-                            : 'fa-solid fa-circle-info text-blue-400';
+                        : kind === 'warn'
+                            ? 'fa-solid fa-circle-exclamation text-amber-400'
+                            : kind === 'ok'
+                                ? 'fa-solid fa-circle-check text-emerald-400'
+                                : 'fa-solid fa-circle-info text-blue-400';
                     clearTimeout(this.toastTimer);
-                    this.toastTimer = setTimeout(() => { this.toast = null; }, 4500);
+                    this.toastTimer = setTimeout(() => { this.toast = null; this.toastCode = ''; }, code ? 6500 : 4500);
                 },
                 clock(ts) {
                     return new Date(ts).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });

@@ -10,6 +10,14 @@ static class StandaloneServer {
   public static List<Dictionary<string,object>> Load(){ lock(_dbLock){ return LoadDevicesUnlocked(); } }
   public static void Save(List<Dictionary<string,object>> l){ lock(_dbLock){ SaveDevicesUnlocked(l); } }
   public static void ResetMemory(){ lock(_dbLock){ _cache=null; _cacheSer=null; _snapshotDirty=false; } }
+  static string GetString(Dictionary<string,object> d,string k){ object v; return d!=null&&d.TryGetValue(k,out v)&&v!=null?Convert.ToString(v,CultureInfo.InvariantCulture):""; }
+  static long ToUnixMs(DateTime d){ return (long)(d-new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc)).TotalMilliseconds; }
+  static Dictionary<string,object> ToDict(object o){ return (Dictionary<string,object>)o; }
+  public static object Snap(string fn,params object[] a){ lock(_dbLock){ switch(fn){
+    case "save": return SaveSnapshotUnlocked((Dictionary<string,object>)a[0]);
+    case "list": return ListSnapshotsUnlocked();
+    case "get": return GetSnapshotUnlocked((string)a[0]);
+    case "del": return DeleteSnapshotUnlocked((string)a[0]); } return null; } }
         // ---- Veritabani katmani: bellek onbellegi + aninda gunluk (journal) + 300ms debounce'lu atomik snapshot ----
         private const int FLUSH_DELAY_MS = 300;
         private const int JOURNAL_BULK_LIMIT = 100;
@@ -292,6 +300,108 @@ static class StandaloneServer {
             }
         }
 
+        // ---- Anlik goruntuler (Geri Al): %LOCALAPPDATA%\KuzgunCRM\anlik\ ----
+        private const int MAX_DISK_SNAPSHOTS = 20;
+
+        private static string SnapshotDir()
+        {
+            string dir = Path.Combine(Program.GetCrmRootDir(), "anlik");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+
+        private static string SafeSnapId(string id)
+        {
+            if (string.IsNullOrEmpty(id) || id.Length > 64) return null;
+            for (int i = 0; i < id.Length; i++)
+            {
+                char c = id[i];
+                bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_';
+                if (!ok) return null;
+            }
+            return id;
+        }
+
+        private static void WriteFileAtomic(string path, string text)
+        {
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, text, new UTF8Encoding(false));
+            if (File.Exists(path)) { try { File.Replace(tmp, path, null); } catch { File.Copy(tmp, path, true); try { File.Delete(tmp); } catch {} } }
+            else File.Move(tmp, path);
+        }
+
+        private static List<Dictionary<string, object>> ListSnapshotsUnlocked()
+        {
+            List<Dictionary<string, object>> list = new List<Dictionary<string, object>>();
+            JavaScriptSerializer ser = CreateSerializer();
+            foreach (string f in Directory.GetFiles(SnapshotDir(), "snap_*.meta.json"))
+            {
+                try { list.Add(ser.Deserialize<Dictionary<string, object>>(File.ReadAllText(f, Encoding.UTF8))); } catch {}
+            }
+            list.Sort(delegate(Dictionary<string, object> a, Dictionary<string, object> b)
+            {
+                long ta = 0, tb = 0;
+                try { ta = (long)double.Parse(Convert.ToString(a["ts"], CultureInfo.InvariantCulture), CultureInfo.InvariantCulture); } catch {}
+                try { tb = (long)double.Parse(Convert.ToString(b["ts"], CultureInfo.InvariantCulture), CultureInfo.InvariantCulture); } catch {}
+                return tb.CompareTo(ta);
+            });
+            return list;
+        }
+
+        private static Dictionary<string, object> SaveSnapshotUnlocked(Dictionary<string, object> snap)
+        {
+            if (snap == null) throw new Exception("GECERSIZ_YEDEK");
+            string id = SafeSnapId(GetString(snap, "id"));
+            if (id == null) throw new Exception("GECERSIZ_YEDEK");
+            object devs;
+            if (!snap.TryGetValue("devices", out devs) || devs == null) throw new Exception("GECERSIZ_YEDEK");
+
+            JavaScriptSerializer ser = CreateSerializer();
+            string dir = SnapshotDir();
+            Dictionary<string, object> meta = new Dictionary<string, object>();
+            meta["id"] = id;
+            meta["ts"] = snap.ContainsKey("ts") ? snap["ts"] : (object)ToUnixMs(DateTime.UtcNow);
+            meta["reason"] = GetString(snap, "reason");
+            meta["count"] = snap.ContainsKey("count") ? snap["count"] : 0;
+
+            WriteFileAtomic(Path.Combine(dir, "snap_" + id + ".json"), ser.Serialize(snap));
+            WriteFileAtomic(Path.Combine(dir, "snap_" + id + ".meta.json"), ser.Serialize(meta));
+
+            List<Dictionary<string, object>> all = ListSnapshotsUnlocked();
+            for (int i = MAX_DISK_SNAPSHOTS; i < all.Count; i++)
+            {
+                string oid = SafeSnapId(GetString(all[i], "id"));
+                if (oid == null) continue;
+                try { File.Delete(Path.Combine(dir, "snap_" + oid + ".json")); } catch {}
+                try { File.Delete(Path.Combine(dir, "snap_" + oid + ".meta.json")); } catch {}
+            }
+            Dictionary<string, object> r = new Dictionary<string, object>();
+            r["status"] = "ok";
+            r["id"] = id;
+            return r;
+        }
+
+        private static Dictionary<string, object> GetSnapshotUnlocked(string id)
+        {
+            string sid = SafeSnapId(id);
+            if (sid == null) throw new Exception("YEDEK_BULUNAMADI");
+            string path = Path.Combine(SnapshotDir(), "snap_" + sid + ".json");
+            if (!File.Exists(path)) throw new Exception("YEDEK_BULUNAMADI");
+            return CreateSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(path, Encoding.UTF8));
+        }
+
+        private static Dictionary<string, object> DeleteSnapshotUnlocked(string id)
+        {
+            string sid = SafeSnapId(id);
+            if (sid == null) throw new Exception("YEDEK_BULUNAMADI");
+            string dir = SnapshotDir();
+            try { File.Delete(Path.Combine(dir, "snap_" + sid + ".json")); } catch {}
+            try { File.Delete(Path.Combine(dir, "snap_" + sid + ".meta.json")); } catch {}
+            Dictionary<string, object> r = new Dictionary<string, object>();
+            r["status"] = "ok";
+            return r;
+        }
+
 }
 static class T {
   static int fails=0; static void Ok(bool c,string m){ Console.WriteLine((c?"PASS - ":"FAIL - ")+m); if(!c) fails++; }
@@ -329,5 +439,17 @@ static class T {
     // yarim yazilmis journal satiri
     d=Fresh(); l=StandaloneServer.Load(); l.Add(R(5,"ok")); StandaloneServer.Save(l); File.AppendAllText(d+"/veritabani.json.journal","U\t{\"id\":6,\"mod"); StandaloneServer.ResetMemory(); l=StandaloneServer.Load();
     Ok(l.Exists(x=>Convert.ToString(x["id"])=="5"),"yarim yazilmis journal satiri yok sayildi, onceki kayitlar korundu");
+    // ---- Anlik goruntuler ----
+    d=Fresh(); var big=new List<Dictionary<string,object>>(); for(int i=0;i<2000;i++) big.Add(R(i,"m"+i));
+    for(int i=0;i<23;i++){ var sn=new Dictionary<string,object>{{"id","100"+i+"-"+i},{"ts",1000+i},{"reason","r"+i},{"count",big.Count},{"devices",big}}; StandaloneServer.Snap("save",sn); }
+    var lst=(List<Dictionary<string,object>>)StandaloneServer.Snap("list");
+    Ok(lst.Count==20,"snapshot sayisi 20 ile sinirli ("+lst.Count+")");
+    Ok(Convert.ToInt64(lst[0]["ts"].ToString())==1022,"liste yeniden eskiye sirali");
+    var full=(Dictionary<string,object>)StandaloneServer.Snap("get",lst[0]["id"].ToString());
+    Ok(full.ContainsKey("devices"),"snapshot icerigi (devices) okunabildi");
+    StandaloneServer.Snap("del",lst[0]["id"].ToString()); lst=(List<Dictionary<string,object>>)StandaloneServer.Snap("list"); Ok(lst.Count==19,"snapshot silindi");
+    bool threw=false; try{ StandaloneServer.Snap("get","..\\..\\x"); }catch{ threw=true; } Ok(threw,"yol gezinmesi (..) reddedildi");
+    threw=false; try{ StandaloneServer.Snap("save",new Dictionary<string,object>{{"id","a/b"},{"devices",new List<object>()}}); }catch{ threw=true; } Ok(threw,"gecersiz kimlik (a/b) reddedildi");
+    Ok(Directory.GetFiles(d+"/anlik","*.tmp").Length==0,"gecici .tmp dosyasi kalmadi");
     Console.WriteLine(fails==0?"ALL OK":fails+" FAIL"); return fails==0?0:1; }
 }

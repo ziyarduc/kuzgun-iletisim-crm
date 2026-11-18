@@ -21,7 +21,7 @@ http.createServer((q, r) => {
     q.on('end', () => {
       let m = {}; try { m = JSON.parse(b); } catch (e) {}
       const fn = m.fn || ''; let result = { ok: true };
-      if (fn === 'crmStatus') result = { mode: 'standalone', spreadsheet: 'Yerel', dailyBackupActive: true, version: 'test' };
+      if (fn === 'crmStatus') result = { mode: 'standalone', spreadsheet: 'Yerel', dailyBackupActive: true, version: '2.4.3', isStandalone: true };
       else if (fn === 'listDevices') result = devs;
       else if (fn === 'listDriveBackups') result = [];
       r.writeHead(200, { 'Content-Type': 'application/json' }); r.end(JSON.stringify({ ok: true, result }));

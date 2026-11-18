@@ -18,11 +18,11 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: AssemblyTitle("Kuzgun Iletisim CRM")]
-[assembly: AssemblyDescription("Standalone Masaustu Uygulamasi ve Kurulum Sihirbazi - Kuzgun Iletisim CRM v2.4.2")]
+[assembly: AssemblyDescription("Standalone Masaustu Uygulamasi ve Kurulum Sihirbazi - Kuzgun Iletisim CRM v2.4.3")]
 [assembly: AssemblyProduct("Kuzgun Iletisim CRM")]
 [assembly: AssemblyCompany("Kuzgun Iletisim")]
-[assembly: AssemblyVersion("2.4.2.0")]
-[assembly: AssemblyFileVersion("2.4.2.0")]
+[assembly: AssemblyVersion("2.4.3.0")]
+[assembly: AssemblyFileVersion("2.4.3.0")]
 [assembly: NeutralResourcesLanguage("tr-TR")]
 
 namespace KuzgunCrmSetup
@@ -50,7 +50,52 @@ namespace KuzgunCrmSetup
         private const uint ATTACH_PARENT_PROCESS = 0xFFFFFFFF;
         private const int SW_HIDE = 0;
 
+        internal const string APP_VERSION = "2.4.3";
         internal static Process CurrentChildProcess = null;
+        private static readonly object _logLock = new object();
+
+        internal static void LogError(string code, string message, Exception ex = null)
+        {
+            try
+            {
+                string logPath = Path.Combine(GetCrmRootDir(), "hatalar.log");
+                if (File.Exists(logPath) && new FileInfo(logPath).Length > 512 * 1024)
+                {
+                    string[] lines = File.ReadAllLines(logPath, Encoding.UTF8);
+                    int skip = Math.Max(0, lines.Length - 200);
+                    string[] keep = new string[lines.Length - skip];
+                    Array.Copy(lines, skip, keep, 0, keep.Length);
+                    File.WriteAllLines(logPath, keep, new UTF8Encoding(false));
+                }
+                string ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+                string detail = ex != null ? (" | " + ex.GetType().Name + ": " + ex.Message) : string.Empty;
+                string line = string.Format("[{0}] [v{1}] [{2}] {3}{4}", ts, APP_VERSION, code ?? "KZG-109", message ?? "", detail);
+                lock (_logLock)
+                {
+                    File.AppendAllText(logPath, line + Environment.NewLine, new UTF8Encoding(false));
+                }
+            }
+            catch {}
+        }
+
+        internal static List<string> ReadRecentErrorLogs(int maxLines)
+        {
+            List<string> outList = new List<string>();
+            try
+            {
+                string logPath = Path.Combine(GetCrmRootDir(), "hatalar.log");
+                if (!File.Exists(logPath)) return outList;
+                string[] lines;
+                lock (_logLock) { lines = File.ReadAllLines(logPath, Encoding.UTF8); }
+                int start = Math.Max(0, lines.Length - maxLines);
+                for (int i = lines.Length - 1; i >= start; i--)
+                {
+                    if (!string.IsNullOrWhiteSpace(lines[i])) outList.Add(lines[i]);
+                }
+            }
+            catch {}
+            return outList;
+        }
 
         internal static readonly string[] Payload = new string[]
         {
@@ -109,9 +154,11 @@ namespace KuzgunCrmSetup
             }
             catch (Exception ex)
             {
+                LogError("KZG-109", "Program Main beklenmeyen hata", ex);
                 MessageBox.Show(
-                    "Program calisirken beklenmeyen bir hata olustu:\n\n" + ex.Message,
-                    "Kuzgun CRM Hatasi",
+                    "[KZG-109] Program calisirken beklenmeyen bir hata olustu.\n\n" +
+                    "Bu kodu destek ekibine iletebilirsiniz: KZG-109\n\nDetay: " + ex.Message,
+                    "Kuzgun CRM Hatasi [KZG-109]",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 return 97;
@@ -255,11 +302,33 @@ namespace KuzgunCrmSetup
                 {
                     if (!string.Equals(Path.GetFullPath(currentExe), Path.GetFullPath(targetExe), StringComparison.OrdinalIgnoreCase))
                     {
-                        File.Copy(currentExe, targetExe, true);
+                        StandaloneServer.StopOtherServerProcesses(targetExe);
+                        Exception lastEx = null;
+                        for (int attempt = 0; attempt < 6; attempt++)
+                        {
+                            try
+                            {
+                                File.Copy(currentExe, targetExe, true);
+                                lastEx = null;
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                lastEx = ex;
+                                Thread.Sleep(200);
+                            }
+                        }
+                        if (lastEx != null)
+                        {
+                            LogError("KZG-102", "KuzgunCRM.exe hedefe kopyalanamadi (dosya kilitli olabilir): " + targetExe, lastEx);
+                        }
                     }
                 }
             }
-            catch {}
+            catch (Exception ex)
+            {
+                LogError("KZG-102", "InstallStandaloneExe hatasi", ex);
+            }
             return File.Exists(targetExe) ? targetExe : Application.ExecutablePath;
         }
 
@@ -332,6 +401,12 @@ namespace KuzgunCrmSetup
                 string standaloneExe = InstallStandaloneExe();
 
                 int port = StandaloneServer.EnsureServerRunning(standaloneExe);
+                if (port <= 0)
+                {
+                    LogError("KZG-201", "Yerel sunucu baslatilamadi veya yanit vermedi.");
+                    MessageBox.Show("[KZG-201] Yerel masaustu sunucusu baslatilamadi.\nDestek Kodu: KZG-201", "Kuzgun CRM Hatasi [KZG-201]", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return 2;
+                }
                 string appUrl = "http://127.0.0.1:" + port + "/";
 
                 OpenStandaloneAppWindow(appUrl);
@@ -339,7 +414,8 @@ namespace KuzgunCrmSetup
             }
             catch (Exception ex)
             {
-                MessageBox.Show("CRM baslatilamadi: " + ex.Message, "Hata", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LogError("KZG-103", "CRM penceresi baslatilamadi", ex);
+                MessageBox.Show("[KZG-103] CRM baslatilamadi: " + ex.Message + "\nDestek Kodu: KZG-103", "Hata [KZG-103]", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
         }
@@ -554,9 +630,17 @@ namespace KuzgunCrmSetup
         internal static int EnsureServerRunning(string exePath)
         {
             int savedPort = ReadSavedPort();
-            if (PingServer(savedPort))
+            string pingVer;
+            if (PingServer(savedPort, out pingVer))
             {
-                return savedPort;
+                if (string.Equals(pingVer, Program.APP_VERSION, StringComparison.Ordinal))
+                {
+                    return savedPort;
+                }
+                // Eski surum sunucu calisiyor -> veri kaybi olmadan kapat ve guncel sunucuyu ac!
+                Program.LogError("KZG-202", "Eski sunucu surumu tespit edildi (" + (pingVer ?? "bilinmiyor") + " != " + Program.APP_VERSION + "), yeniden baslatiliyor.");
+                StopOtherServerProcesses(exePath);
+                Thread.Sleep(250);
             }
 
             ProcessStartInfo psi = new ProcessStartInfo(exePath, "-Sunucu")
@@ -567,13 +651,71 @@ namespace KuzgunCrmSetup
             };
             Process.Start(psi);
 
-            for (int i = 0; i < 30; i++)
+            for (int i = 0; i < 35; i++)
             {
                 Thread.Sleep(120);
                 int p = ReadSavedPort();
-                if (PingServer(p)) return p;
+                string v;
+                if (PingServer(p, out v) && string.Equals(v, Program.APP_VERSION, StringComparison.Ordinal)) return p;
             }
-            return ReadSavedPort();
+            string fallbackV;
+            int fp = ReadSavedPort();
+            return PingServer(fp, out fallbackV) ? fp : -1;
+        }
+
+        internal static void StopOtherServerProcesses(string targetExePath)
+        {
+            // 1) Calisan sunucuya nazik kapatma (/shutdown) gonder -> FlushDb() calissin
+            int port = ReadSavedPort();
+            for (int p = port; p <= DEFAULT_PORT + 5; p = (p == port && port != DEFAULT_PORT) ? DEFAULT_PORT : p + 1)
+            {
+                try
+                {
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + p + "/shutdown");
+                    req.Method = "POST";
+                    req.Timeout = 400;
+                    req.ContentLength = 0;
+                    using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse()) {}
+                    Thread.Sleep(200);
+                    break;
+                }
+                catch {}
+                if (p >= DEFAULT_PORT + 5) break;
+            }
+
+            // 2) Hala acik olan diger KuzgunCRM / KuzgunCRM_Kurulum proseslerini temizle (exe kilidini acmak icin)
+            try
+            {
+                int myPid = Process.GetCurrentProcess().Id;
+                string normTarget = string.IsNullOrEmpty(targetExePath) ? "" : Path.GetFullPath(targetExePath);
+                foreach (Process proc in Process.GetProcesses())
+                {
+                    try
+                    {
+                        if (proc.Id == myPid) continue;
+                        string pname = proc.ProcessName ?? "";
+                        if (!pname.Equals("KuzgunCRM", StringComparison.OrdinalIgnoreCase) &&
+                            !pname.Equals("KuzgunCRM_Kurulum", StringComparison.OrdinalIgnoreCase)) continue;
+                        bool match = true;
+                        try
+                        {
+                            string mod = proc.MainModule != null ? proc.MainModule.FileName : "";
+                            if (!string.IsNullOrEmpty(mod) && !string.IsNullOrEmpty(normTarget))
+                            {
+                                match = string.Equals(Path.GetFullPath(mod), normTarget, StringComparison.OrdinalIgnoreCase);
+                            }
+                        }
+                        catch {}
+                        if (match)
+                        {
+                            try { proc.Kill(); proc.WaitForExit(1500); } catch {}
+                        }
+                    }
+                    catch {}
+                    finally { try { proc.Dispose(); } catch {} }
+                }
+            }
+            catch {}
         }
 
         private static int ReadSavedPort()
@@ -594,8 +736,9 @@ namespace KuzgunCrmSetup
             return DEFAULT_PORT;
         }
 
-        private static bool PingServer(int port)
+        private static bool PingServer(int port, out string serverVersion)
         {
+            serverVersion = null;
             try
             {
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + "/ping");
@@ -604,7 +747,21 @@ namespace KuzgunCrmSetup
                 req.ReadWriteTimeout = 500;
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 {
-                    return resp.StatusCode == HttpStatusCode.OK;
+                    if (resp.StatusCode != HttpStatusCode.OK) return false;
+                    using (Stream st = resp.GetResponseStream())
+                    using (StreamReader sr = new StreamReader(st, Encoding.UTF8))
+                    {
+                        string txt = (sr.ReadToEnd() ?? "").Trim();
+                        if (txt.StartsWith("OK|", StringComparison.Ordinal))
+                        {
+                            serverVersion = txt.Substring(3).Trim();
+                        }
+                        else if (txt == "OK")
+                        {
+                            serverVersion = "legacy";
+                        }
+                    }
+                    return true;
                 }
             }
             catch
@@ -724,7 +881,15 @@ namespace KuzgunCrmSetup
 
                     if (path.StartsWith("/ping", StringComparison.OrdinalIgnoreCase))
                     {
-                        WriteHttpResponse(ns, "200 OK", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("OK"));
+                        WriteHttpResponse(ns, "200 OK", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("OK|" + Program.APP_VERSION));
+                        return;
+                    }
+
+                    if (path.StartsWith("/shutdown", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try { FlushDb(); } catch {}
+                        WriteHttpResponse(ns, "200 OK", "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("BYE"));
+                        ThreadPool.QueueUserWorkItem(delegate { Thread.Sleep(80); Environment.Exit(0); });
                         return;
                     }
 
@@ -846,12 +1011,24 @@ namespace KuzgunCrmSetup
 
         private static byte[] BuildStandaloneHtmlBytes()
         {
-            string crmDir = Program.GetCrmRootDir();
-            string payloadHtml = Path.Combine(Program.GetPayloadDir(), "Kuzgun_Iletisim_CRM.html");
-            string localHtml = Path.Combine(crmDir, "Kuzgun_CRM.html");
-            string srcPath = File.Exists(payloadHtml) ? payloadHtml : localHtml;
-
-            string html = File.ReadAllText(srcPath, Encoding.UTF8);
+            string html = null;
+            try
+            {
+                byte[] resBytes = Program.ReadResource(Assembly.GetExecutingAssembly(), "payload.Kuzgun_Iletisim_CRM.html");
+                if (resBytes != null && resBytes.Length > 1000)
+                {
+                    html = Encoding.UTF8.GetString(resBytes);
+                }
+            }
+            catch {}
+            if (string.IsNullOrEmpty(html))
+            {
+                string crmDir = Program.GetCrmRootDir();
+                string payloadHtml = Path.Combine(Program.GetPayloadDir(), "Kuzgun_Iletisim_CRM.html");
+                string localHtml = Path.Combine(crmDir, "Kuzgun_CRM.html");
+                string srcPath = File.Exists(payloadHtml) ? payloadHtml : localHtml;
+                html = File.ReadAllText(srcPath, Encoding.UTF8);
+            }
 
             // Inject standalone server API endpoint so the UI connects immediately to the built-in C# server
             string apiUrl = "http://127.0.0.1:" + _activePort + "/api";
@@ -901,11 +1078,25 @@ namespace KuzgunCrmSetup
             }
             catch (Exception ex)
             {
+                string code = ClassifyServerError(ex.Message);
+                if (code != "KZG-401") Program.LogError(code, "API hatasi: " + ex.Message, ex);
                 Dictionary<string, object> errEnv = new Dictionary<string, object>();
                 errEnv["ok"] = false;
+                errEnv["errorCode"] = code;
                 errEnv["error"] = ex.Message;
                 return ser.Serialize(errEnv);
             }
+        }
+
+        private static string ClassifyServerError(string msg)
+        {
+            string m = msg ?? "";
+            if (m.IndexOf("PIN_HATALI", StringComparison.Ordinal) >= 0) return "KZG-401";
+            if (m.IndexOf("PIN_KISA", StringComparison.Ordinal) >= 0) return "KZG-402";
+            if (m.IndexOf("BILINMEYEN_ISLEM", StringComparison.Ordinal) >= 0) return "KZG-403";
+            if (m.IndexOf("GECERSIZ_YEDEK", StringComparison.Ordinal) >= 0) return "KZG-404";
+            if (m.IndexOf("YEDEK_BULUNAMADI", StringComparison.Ordinal) >= 0) return "KZG-304";
+            return "KZG-303";
         }
 
         private static object DispatchRpc(string fn, ArrayList args)
@@ -1052,9 +1243,136 @@ namespace KuzgunCrmSetup
                 case "openBackupFolder":
                     return OpenBackupFolderInExplorer();
 
+                case "listSnapshots":
+                    lock (_dbLock) { CheckPinUnlocked(arg0); return ListSnapshotsUnlocked(); }
+
+                case "saveSnapshot":
+                    lock (_dbLock) { CheckPinUnlocked(arg0); return SaveSnapshotUnlocked(args.Count > 1 ? ToDict(args[1]) : null); }
+
+                case "getSnapshot":
+                    lock (_dbLock) { CheckPinUnlocked(arg0); return GetSnapshotUnlocked(args.Count > 1 ? Convert.ToString(args[1] ?? string.Empty) : string.Empty); }
+
+                case "deleteSnapshot":
+                    lock (_dbLock) { CheckPinUnlocked(arg0); return DeleteSnapshotUnlocked(args.Count > 1 ? Convert.ToString(args[1] ?? string.Empty) : string.Empty); }
+
+                case "logClientError":
+                    {
+                        string ecode = arg0;
+                        string emsg = args.Count > 1 ? Convert.ToString(args[1] ?? string.Empty) : string.Empty;
+                        Program.LogError(string.IsNullOrEmpty(ecode) ? "KZG-205" : ecode, "UI: " + emsg);
+                        Dictionary<string, object> r = new Dictionary<string, object>();
+                        r["status"] = "ok";
+                        return r;
+                    }
+
+                case "getErrorLogs":
+                    return Program.ReadRecentErrorLogs(50);
+
                 default:
                     throw new Exception("BILINMEYEN_ISLEM");
             }
+        }
+
+        // ---- Anlik goruntuler (Geri Al): %LOCALAPPDATA%\KuzgunCRM\anlik\ ----
+        private const int MAX_DISK_SNAPSHOTS = 20;
+
+        private static string SnapshotDir()
+        {
+            string dir = Path.Combine(Program.GetCrmRootDir(), "anlik");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+
+        private static string SafeSnapId(string id)
+        {
+            if (string.IsNullOrEmpty(id) || id.Length > 64) return null;
+            for (int i = 0; i < id.Length; i++)
+            {
+                char c = id[i];
+                bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_';
+                if (!ok) return null;
+            }
+            return id;
+        }
+
+        private static void WriteFileAtomic(string path, string text)
+        {
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, text, new UTF8Encoding(false));
+            if (File.Exists(path)) { try { File.Replace(tmp, path, null); } catch { File.Copy(tmp, path, true); try { File.Delete(tmp); } catch {} } }
+            else File.Move(tmp, path);
+        }
+
+        private static List<Dictionary<string, object>> ListSnapshotsUnlocked()
+        {
+            List<Dictionary<string, object>> list = new List<Dictionary<string, object>>();
+            JavaScriptSerializer ser = CreateSerializer();
+            foreach (string f in Directory.GetFiles(SnapshotDir(), "snap_*.meta.json"))
+            {
+                try { list.Add(ser.Deserialize<Dictionary<string, object>>(File.ReadAllText(f, Encoding.UTF8))); } catch {}
+            }
+            list.Sort(delegate(Dictionary<string, object> a, Dictionary<string, object> b)
+            {
+                long ta = 0, tb = 0;
+                try { ta = (long)double.Parse(Convert.ToString(a["ts"], CultureInfo.InvariantCulture), CultureInfo.InvariantCulture); } catch {}
+                try { tb = (long)double.Parse(Convert.ToString(b["ts"], CultureInfo.InvariantCulture), CultureInfo.InvariantCulture); } catch {}
+                return tb.CompareTo(ta);
+            });
+            return list;
+        }
+
+        private static Dictionary<string, object> SaveSnapshotUnlocked(Dictionary<string, object> snap)
+        {
+            if (snap == null) throw new Exception("GECERSIZ_YEDEK");
+            string id = SafeSnapId(GetString(snap, "id"));
+            if (id == null) throw new Exception("GECERSIZ_YEDEK");
+            object devs;
+            if (!snap.TryGetValue("devices", out devs) || devs == null) throw new Exception("GECERSIZ_YEDEK");
+
+            JavaScriptSerializer ser = CreateSerializer();
+            string dir = SnapshotDir();
+            Dictionary<string, object> meta = new Dictionary<string, object>();
+            meta["id"] = id;
+            meta["ts"] = snap.ContainsKey("ts") ? snap["ts"] : (object)ToUnixMs(DateTime.UtcNow);
+            meta["reason"] = GetString(snap, "reason");
+            meta["count"] = snap.ContainsKey("count") ? snap["count"] : 0;
+
+            WriteFileAtomic(Path.Combine(dir, "snap_" + id + ".json"), ser.Serialize(snap));
+            WriteFileAtomic(Path.Combine(dir, "snap_" + id + ".meta.json"), ser.Serialize(meta));
+
+            List<Dictionary<string, object>> all = ListSnapshotsUnlocked();
+            for (int i = MAX_DISK_SNAPSHOTS; i < all.Count; i++)
+            {
+                string oid = SafeSnapId(GetString(all[i], "id"));
+                if (oid == null) continue;
+                try { File.Delete(Path.Combine(dir, "snap_" + oid + ".json")); } catch {}
+                try { File.Delete(Path.Combine(dir, "snap_" + oid + ".meta.json")); } catch {}
+            }
+            Dictionary<string, object> r = new Dictionary<string, object>();
+            r["status"] = "ok";
+            r["id"] = id;
+            return r;
+        }
+
+        private static Dictionary<string, object> GetSnapshotUnlocked(string id)
+        {
+            string sid = SafeSnapId(id);
+            if (sid == null) throw new Exception("YEDEK_BULUNAMADI");
+            string path = Path.Combine(SnapshotDir(), "snap_" + sid + ".json");
+            if (!File.Exists(path)) throw new Exception("YEDEK_BULUNAMADI");
+            return CreateSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(path, Encoding.UTF8));
+        }
+
+        private static Dictionary<string, object> DeleteSnapshotUnlocked(string id)
+        {
+            string sid = SafeSnapId(id);
+            if (sid == null) throw new Exception("YEDEK_BULUNAMADI");
+            string dir = SnapshotDir();
+            try { File.Delete(Path.Combine(dir, "snap_" + sid + ".json")); } catch {}
+            try { File.Delete(Path.Combine(dir, "snap_" + sid + ".meta.json")); } catch {}
+            Dictionary<string, object> r = new Dictionary<string, object>();
+            r["status"] = "ok";
+            return r;
         }
 
         private static void CheckPinUnlocked(string pin)
@@ -1109,8 +1427,13 @@ namespace KuzgunCrmSetup
             res["activeUserEmail"] = acc;
             res["isStandalone"] = true;
             res["hasGoogleCloud"] = hasGoogleCloud;
-            res["version"] = "2.4.2";
+            res["version"] = Program.APP_VERSION;
             res["updated"] = maxUpdated;
+            if (!string.IsNullOrEmpty(LastRecoveryNote))
+            {
+                res["recoveryNote"] = LastRecoveryNote;
+                res["recoveryCode"] = LastRecoveryNote.IndexOf(".bak", StringComparison.OrdinalIgnoreCase) >= 0 ? "KZG-301" : "KZG-302";
+            }
             return res;
         }
 
@@ -1650,7 +1973,7 @@ namespace KuzgunCrmSetup
 
             Dictionary<string, object> envelope = new Dictionary<string, object>();
             envelope["app"] = "kuzgun-crm";
-            envelope["version"] = "2.4.2";
+            envelope["version"] = "2.4.3";
             envelope["exported_at"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             envelope["count"] = devices.Count;
             envelope["devices"] = devices;
@@ -2126,7 +2449,7 @@ namespace KuzgunCrmSetup
                 {
                     det.HasCloudConfig = true;
                     string json = File.ReadAllText(cfgFile);
-                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.4.2";
+                    det.CloudVersion = SimpleJsonExtract(json, "surum") ?? "v2.4.3";
                     det.CloudUrl = SimpleJsonExtract(json, "url");
                 }
 
@@ -2181,7 +2504,7 @@ namespace KuzgunCrmSetup
                 det.TitleColor = Color.FromArgb(14, 116, 144);
                 det.SummaryDetail = string.Format(
                     "Sistemde aktif Kuzgun CRM ({0}) bulundu. Tek tikla guncelleme yapildiginda masaustu uygulamaniz yenilenecek ve tum musteri verileriniz aynen korunacaktir.",
-                    det.CloudVersion ?? "v2.4.2");
+                    det.CloudVersion ?? "v2.4.3");
             }
             else if (det.HasLegacyOzi || det.HasLegacyAppData || det.HasDesktopShortcuts)
             {
@@ -2289,7 +2612,7 @@ namespace KuzgunCrmSetup
             _lblSubtitle.AutoSize = true;
 
             _lblVersion = new Label();
-            _lblVersion.Text = "v2.4.2";
+            _lblVersion.Text = "v2.4.3";
             _lblVersion.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
             _lblVersion.ForeColor = Color.FromArgb(252, 211, 77);
             _lblVersion.Location = new Point(585, 25);
@@ -2437,7 +2760,7 @@ namespace KuzgunCrmSetup
                 _btnStart.Text = "Tek Tıkla Kur";
             }
 
-            AppendLog("Kuzgun CRM v2.4.2 Kurulum ve Yonetim Sihirbazi hazir.");
+            AppendLog("Kuzgun CRM v2.4.3 Kurulum ve Yonetim Sihirbazi hazir.");
             AppendLog("Durum: " + det.SummaryTitle);
         }
 
@@ -2466,6 +2789,8 @@ namespace KuzgunCrmSetup
                     _progressBar.Value = 10;
                 });
 
+                string targetExe = Path.Combine(Program.GetCrmRootDir(), "KuzgunCRM.exe");
+                StandaloneServer.StopOtherServerProcesses(targetExe);
                 string baseDir = Program.GetPayloadDir();
                 Program.ExtractPayloadFiles(baseDir);
                 Program.InstallStandaloneExe();

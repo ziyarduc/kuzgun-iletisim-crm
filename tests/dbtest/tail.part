@@ -1,0 +1,51 @@
+}
+static class T {
+  static int fails=0; static void Ok(bool c,string m){ Console.WriteLine((c?"PASS - ":"FAIL - ")+m); if(!c) fails++; }
+  static Dictionary<string,object> R(int id,string model){ return new Dictionary<string,object>{{"id",id},{"model",model}}; }
+  static string Fresh(){ var d=Path.Combine(Path.GetTempPath(),"kz"+Guid.NewGuid().ToString("N")); Directory.CreateDirectory(d); Program.Root=d; StandaloneServer.ResetMemory(); return d; }
+  static int Main(){
+    var d=Fresh(); var l=StandaloneServer.Load(); Ok(l.Count==1,"ilk acilis demo");
+    l=StandaloneServer.Load(); l.Add(R(2,"a")); StandaloneServer.Save(l);
+    Ok(File.Exists(d+"/veritabani.json.journal"),"tekil islem ANINDA gunluge yazildi");
+    var snapBefore=File.ReadAllText(d+"/veritabani.json"); Ok(!snapBefore.Contains("\"a\""),"snapshot henuz yazilmadi (debounce)");
+    // simule kill: bellegi at, diskten yeniden yukle (flush OLMADAN)
+    StandaloneServer.ResetMemory(); l=StandaloneServer.Load(); Ok(l.Count==2,"kill sonrasi journal replay: kayit kaybolmadi");
+    Thread.Sleep(700);
+    // debounce flush
+    l=StandaloneServer.Load(); l.Add(R(3,"b")); StandaloneServer.Save(l); Thread.Sleep(900);
+    Ok(File.ReadAllText(d+"/veritabani.json").Contains("\"b\"")&&!File.Exists(d+"/veritabani.json.journal"),"300ms sonra snapshot yazildi, gunluk silindi");
+    // duzenleme + silme + kill
+    l=StandaloneServer.Load(); l[0]["model"]="EDIT"; l.RemoveAll(x=>Convert.ToString(x["id"])=="2"); StandaloneServer.Save(l);
+    StandaloneServer.ResetMemory(); l=StandaloneServer.Load();
+    Ok(l.Count==2&&l.Exists(x=>Convert.ToString(x["model"])=="EDIT")&&!l.Exists(x=>Convert.ToString(x["id"])=="2"),"duzenleme+silme kill sonrasi dogru");
+    Thread.Sleep(700);
+    // 100 ardisik kayit
+    var sw=System.Diagnostics.Stopwatch.StartNew(); l=StandaloneServer.Load(); for(int i=0;i<5000;i++) l.Add(R(1000+i,"m"+i)); StandaloneServer.Save(l); Thread.Sleep(100);
+    sw.Restart(); for(int i=0;i<100;i++){ var x=StandaloneServer.Load(); x.Add(R(9000+i,"n"+i)); StandaloneServer.Save(x);} sw.Stop();
+    Ok(sw.ElapsedMilliseconds<3000,"5000 kayitta 100 ardisik kayit "+sw.ElapsedMilliseconds+" ms");
+    StandaloneServer.ResetMemory(); l=StandaloneServer.Load(); Ok(l.Count>=5100,"toplu+ardisik sonrasi kill: tum kayitlar var ("+l.Count+")");
+    Thread.Sleep(700);
+    // bozuk json -> .bak
+    d=Fresh(); l=StandaloneServer.Load(); l.Add(R(2,"x")); StandaloneServer.Save(l); Thread.Sleep(700); l=StandaloneServer.Load(); l.Add(R(3,"y")); StandaloneServer.Save(l); Thread.Sleep(700);
+    File.WriteAllText(d+"/veritabani.json","{bozuk"); StandaloneServer.ResetMemory(); l=StandaloneServer.Load();
+    Ok(l.Count>=2,"bozuk veritabani.json -> .bak kurtarma ("+l.Count+")"); Ok(StandaloneServer.LastRecoveryNote!=null,"kurtarma notu set");
+    // bozuk json + bak yok -> yedekler
+    d=Fresh(); Directory.CreateDirectory(d+"/yedekler"); File.WriteAllText(d+"/yedekler/b.json","[{\"id\":7,\"model\":\"yedek\"}]"); File.WriteAllText(d+"/veritabani.json","}}}");
+    l=StandaloneServer.Load(); Ok(l.Count==1&&Convert.ToString(l[0]["model"])=="yedek","bozuk + .bak yok -> en yeni yedekten kurtarma");
+    // yarim yazilmis journal satiri
+    d=Fresh(); l=StandaloneServer.Load(); l.Add(R(5,"ok")); StandaloneServer.Save(l); File.AppendAllText(d+"/veritabani.json.journal","U\t{\"id\":6,\"mod"); StandaloneServer.ResetMemory(); l=StandaloneServer.Load();
+    Ok(l.Exists(x=>Convert.ToString(x["id"])=="5"),"yarim yazilmis journal satiri yok sayildi, onceki kayitlar korundu");
+    // ---- Anlik goruntuler ----
+    d=Fresh(); var big=new List<Dictionary<string,object>>(); for(int i=0;i<2000;i++) big.Add(R(i,"m"+i));
+    for(int i=0;i<23;i++){ var sn=new Dictionary<string,object>{{"id","100"+i+"-"+i},{"ts",1000+i},{"reason","r"+i},{"count",big.Count},{"devices",big}}; StandaloneServer.Snap("save",sn); }
+    var lst=(List<Dictionary<string,object>>)StandaloneServer.Snap("list");
+    Ok(lst.Count==20,"snapshot sayisi 20 ile sinirli ("+lst.Count+")");
+    Ok(Convert.ToInt64(lst[0]["ts"].ToString())==1022,"liste yeniden eskiye sirali");
+    var full=(Dictionary<string,object>)StandaloneServer.Snap("get",lst[0]["id"].ToString());
+    Ok(full.ContainsKey("devices"),"snapshot icerigi (devices) okunabildi");
+    StandaloneServer.Snap("del",lst[0]["id"].ToString()); lst=(List<Dictionary<string,object>>)StandaloneServer.Snap("list"); Ok(lst.Count==19,"snapshot silindi");
+    bool threw=false; try{ StandaloneServer.Snap("get","..\\..\\x"); }catch{ threw=true; } Ok(threw,"yol gezinmesi (..) reddedildi");
+    threw=false; try{ StandaloneServer.Snap("save",new Dictionary<string,object>{{"id","a/b"},{"devices",new List<object>()}}); }catch{ threw=true; } Ok(threw,"gecersiz kimlik (a/b) reddedildi");
+    Ok(Directory.GetFiles(d+"/anlik","*.tmp").Length==0,"gecici .tmp dosyasi kalmadi");
+    Console.WriteLine(fails==0?"ALL OK":fails+" FAIL"); return fails==0?0:1; }
+}

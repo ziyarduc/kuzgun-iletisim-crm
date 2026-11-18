@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 $Kaynak = $PSScriptRoot
 $Ana = Join-Path $env:LOCALAPPDATA 'KuzgunCRM'
 $Proje = Join-Path $Ana 'proje'
-$Surdur = 'v2.4.2'
+$Surdur = 'v2.4.3'
 function ConfigYol { return (Join-Path $Ana 'kurulum.json') }
 
 function Satir { param($renk, $metin) Write-Host $metin -ForegroundColor $renk }
@@ -1370,11 +1370,21 @@ function EskiKurulumTemizle {
                 $tasindi++
             }
         }
-        # Eski yerel (127.0.0.1) sunucu surecleri (Canli veri cekildikten sonra guvenle durdurulur)
+        # Calisan eski KuzgunCRM.exe -Sunucu prosesine nazik kapatma (/shutdown) gonder ki DB flush olsun ve EXE kilidi kalksin
+        for ($sp = 18881; $sp -le 18886; $sp++) {
+            try {
+                Invoke-WebRequest -Uri ('http://127.0.0.1:' + $sp + '/shutdown') -Method Post -TimeoutSec 1 -UseBasicParsing -ErrorAction Stop | Out-Null
+                Start-Sleep -Milliseconds 250
+                break
+            } catch {}
+        }
+        # Eski yerel (127.0.0.1) sunucu ve eski KuzgunCRM.exe -Sunucu surecleri (Canli veri cekildikten sonra guvenle durdurulur)
         $durdu = 0
         foreach ($pr in (Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-                $_.ProcessId -ne $PID -and $_.Name -match '(?i)^(python|pythonw|node|php)\.exe$' -and
-                $_.CommandLine -match '(?i)kuzgun' -and $_.CommandLine -notmatch '(?i)clasp|npm' })) {
+                $_.ProcessId -ne $PID -and (
+                    ($_.Name -match '(?i)^(python|pythonw|node|php)\.exe$' -and $_.CommandLine -match '(?i)kuzgun' -and $_.CommandLine -notmatch '(?i)clasp|npm') -or
+                    ($_.Name -match '(?i)^KuzgunCRM\.exe$' -and $_.CommandLine -match '(?i)-Sunucu')
+                ) })) {
             try { Stop-Process -Id $pr.ProcessId -Force -ErrorAction Stop; $durdu++ } catch {}
         }
         if ($tasindi -gt 0) { Basari ('  [OK] Eski masaustu dosyalari yedeklenip tasindi (' + $tasindi + ') -> ' + $yedekKlasor) }
@@ -1400,12 +1410,16 @@ function KisayolOlustur {
     $kaynakExeler += (Join-Path (Split-Path -Parent $Kaynak) 'KuzgunCRM_Kurulum.exe')
     foreach ($adayExe in $kaynakExeler) {
         if ($adayExe -and (Test-Path $adayExe)) {
-            try {
-                if ($adayExe -ne $hedefExe) {
-                    Copy-Item -Path $adayExe -Destination $hedefExe -Force -ErrorAction SilentlyContinue
-                }
-                break
-            } catch {}
+            if ($adayExe -eq $hedefExe) { break }
+            $kopyalandi = $false
+            for ($deneme = 0; $deneme -lt 5; $deneme++) {
+                try {
+                    Copy-Item -Path $adayExe -Destination $hedefExe -Force -ErrorAction Stop
+                    $kopyalandi = $true
+                    break
+                } catch { Start-Sleep -Milliseconds 250 }
+            }
+            if ($kopyalandi) { break }
         }
     }
 

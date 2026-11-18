@@ -6,3 +6,6 @@ kurulum.log
 *.log
 exe/fail.png
 .agents/
+
+tests/dbtest/bin/
+tests/dbtest/obj/

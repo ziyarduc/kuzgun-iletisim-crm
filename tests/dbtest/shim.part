@@ -1,0 +1,20 @@
+using System; using System.Collections.Generic; using System.IO; using System.Text; using System.Globalization; using System.Threading; using System.Text.Json;
+class JavaScriptSerializer { public int MaxJsonLength; public string Serialize(object o){ return JsonSerializer.Serialize(o);} public T Deserialize<T>(string s){ return JsonSerializer.Deserialize<T>(s);} }
+static class Program { public static string Root; public static string GetCrmRootDir(){ return Root; } }
+static class StandaloneServer {
+  static readonly object _dbLock = new object();
+  static string GetDbFilePath(){ return Path.Combine(Program.GetCrmRootDir(),"veritabani.json"); }
+  static JavaScriptSerializer CreateSerializer(){ return new JavaScriptSerializer(); }
+  static List<Dictionary<string,object>> ParseDevicesFromJson(string raw){ var l = JsonSerializer.Deserialize<List<Dictionary<string,object>>>(raw); if (l==null) throw new Exception("x"); return l; }
+  static List<Dictionary<string,object>> CreateDemoDevices(){ return new List<Dictionary<string,object>>{ new Dictionary<string,object>{{"id",1},{"model","demo"}} }; }
+  public static List<Dictionary<string,object>> Load(){ lock(_dbLock){ return LoadDevicesUnlocked(); } }
+  public static void Save(List<Dictionary<string,object>> l){ lock(_dbLock){ SaveDevicesUnlocked(l); } }
+  public static void ResetMemory(){ lock(_dbLock){ _cache=null; _cacheSer=null; _snapshotDirty=false; } }
+  static string GetString(Dictionary<string,object> d,string k){ object v; return d!=null&&d.TryGetValue(k,out v)&&v!=null?Convert.ToString(v,CultureInfo.InvariantCulture):""; }
+  static long ToUnixMs(DateTime d){ return (long)(d-new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc)).TotalMilliseconds; }
+  static Dictionary<string,object> ToDict(object o){ return (Dictionary<string,object>)o; }
+  public static object Snap(string fn,params object[] a){ lock(_dbLock){ switch(fn){
+    case "save": return SaveSnapshotUnlocked((Dictionary<string,object>)a[0]);
+    case "list": return ListSnapshotsUnlocked();
+    case "get": return GetSnapshotUnlocked((string)a[0]);
+    case "del": return DeleteSnapshotUnlocked((string)a[0]); } return null; } }
